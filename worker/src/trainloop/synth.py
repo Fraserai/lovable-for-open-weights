@@ -7,6 +7,7 @@ for test or public documents only, since its API retains data unless under a ZDR
 
 import asyncio
 import json
+import re
 
 import httpx
 
@@ -55,19 +56,30 @@ The organisation's goal for their model:
 {goal}
 </goal>
 
-Using ONLY the source excerpt below, write {n} realistic conversations that serve that goal.
+The knowledge below is what the model will know after training. Write {n} realistic conversations
+that serve the goal, using only facts from that knowledge.
 - "user": something a real user of this model would plausibly send. Vary phrasing, length and intent.
-- "assistant": the ideal reply, fully grounded in the excerpt. Never invent facts, figures or policies
-  that are not in the excerpt. Simple arithmetic on figures it gives is fine. Match the tone the goal implies.
-- Write the reply as the model itself talking to the user. The user never sees this excerpt, so never
-  refer to "the excerpt", "the source", "the document" or "the text provided". If something isn't
-  covered, say so the way a knowledgeable person would (e.g. suggest who to contact).
-- If the excerpt has little useful content for the goal (e.g. a table of contents, legal boilerplate),
-  return fewer examples or an empty list.
+- "assistant": the ideal reply, spoken by the model as its own knowledge, like an expert who simply
+  knows this. Never invent facts, figures or policies it doesn't contain; simple arithmetic on its
+  figures is fine. Match the tone the goal implies. When a question goes beyond what is known, say so
+  plainly and suggest who to contact. The user cannot see any reference material, so the reply must
+  never mention one.
+- If the knowledge has little useful content for the goal (e.g. a table of contents, legal boilerplate),
+  return fewer conversations or an empty list.
 
-<source file="{source}" section="{heading}">
+<knowledge from="{source}" topic="{heading}">
 {text}
-</source>"""
+</knowledge>"""
+
+# Replies that talk about the material they were written from teach the model to reference
+# documents the user never sees. The prompt avoids this; this catches what slips through.
+_LEAK = re.compile(r"\b(the|this|that|provided|given)\s+(excerpt|source|document|passage|knowledge|text provided|reference material)\b"
+                   r"|\bexcerpt\b", re.IGNORECASE)
+
+
+def leaks_source(reply: str) -> bool:
+    return bool(_LEAK.search(reply))
+
 
 _SYSTEM_PROMPT_INSTRUCTIONS = """Write a concise system prompt (2-4 sentences) for a model fine-tuned to meet this goal.
 It will be used in every training example and at inference time. Do not mention training or fine-tuning.
@@ -152,12 +164,18 @@ async def generate_rows(gen: Generator, chunks: list[Chunk], goal: str, per_chun
         except Exception as e:  # noqa: BLE001 - surface per-chunk failures to the user
             return chunk, [], f"{chunk.source} / {chunk.heading or '(no heading)'}: {e}"
 
+    dropped = 0
     for fut in asyncio.as_completed([one(c) for c in chunks]):
         chunk, examples, err = await fut
         if err:
             errors.append(err)
         for ex in examples:
+            if leaks_source(ex["assistant"]):
+                dropped += 1
+                continue
             rows.append(to_row(system_prompt, ex["user"], ex["assistant"]))
         if on_progress:
             on_progress()
+    if dropped:
+        errors.append(f"dropped {dropped} repl{'y' if dropped == 1 else 'ies'} that mentioned the source material")
     return system_prompt, rows, errors
