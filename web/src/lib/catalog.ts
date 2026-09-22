@@ -30,7 +30,8 @@ function refresh(): Promise<void> {
   refreshing ??= (async () => {
     await mkdir(path.dirname(CACHE), { recursive: true });
     await new Promise<void>((resolve, reject) => {
-      const child = spawn("uv", ["run", "--directory", path.join(ROOT, "worker"), "trainloop", "catalog", "--json", CACHE]);
+      const child = spawn("uv", ["run", "--no-sync", "--directory", path.join(ROOT, "worker"), "trainloop", "catalog", "--json", CACHE],
+        { env: { ...process.env, PYTHONPATH: path.join(ROOT, "worker", "src") } });
       const timer = setTimeout(() => { child.kill(); reject(new Error("catalog timed out")); }, 90_000);
       child.on("error", reject);
       child.on("close", (code) => {

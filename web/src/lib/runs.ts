@@ -11,15 +11,42 @@ const ROOT = path.resolve(process.cwd(), "..");
 const WORKER = path.join(ROOT, "worker");
 const RUNS = path.join(ROOT, "runs");
 
+// uv's editable install of the worker has broken before (it survived a folder move pointing at the
+// old path). Naming the source directory outright means a bad install record can't take the app down.
+const WORKER_ENV = { PYTHONPATH: path.join(WORKER, "src"), NO_COLOR: "1" };
+
 // First pass keeps generator spend small; raise once the loop is proven.
 const FIRST_PASS_CHUNKS = "20";
 
 export type Stage = "waiting" | "running" | "done" | "failed";
 
+export type TrainPlan = {
+  trainer: "fireworks" | "tinker";
+  base_model: string;
+  examples: number;
+  epochs: number;
+  steps: number;
+  tokens: number;
+  lora_rank: number;
+  est_cost: number | null;
+  rate_per_million: number | null;
+  ok: boolean;
+  report: string[];
+};
+
+export type TrainProgress = {
+  state: "waiting" | "running" | "done" | "failed";
+  steps: number;
+  totalSteps: number | null;
+  error: string | null;
+  hfRepo: string | null;
+};
+
 export type RunStatus = {
   id: string;
   status: "running" | "done" | "failed";
   stages: { read: Stage; write: Stage; check: Stage };
+  train: TrainProgress;
   error: string | null;
   rows: number | null;
   estTokens: number | null;
@@ -64,7 +91,7 @@ export async function startPrepare(id: string, goal: string, baseModel: string, 
     "uv",
     ["run", "--directory", WORKER, "trainloop", "prepare", uploads, "--goal", goal, "--run", id,
      "--base-model", baseModel, "--max-chunks", FIRST_PASS_CHUNKS],
-    { env: { ...process.env, PYTHONUNBUFFERED: "1", NO_COLOR: "1" } },
+    { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } },
   );
   child.stdout.pipe(log);
   child.stderr.pipe(log);
@@ -75,6 +102,60 @@ export async function startPrepare(id: string, goal: string, baseModel: string, 
   };
   child.on("error", (e) => { log.write(`\nCould not start the worker: ${e.message}\n`); finish(-1); });
   child.on("close", finish);
+}
+
+/** Runs a worker command, returning its stdout. Used for the free planning step. */
+function worker(args: string[], timeoutMs = 120_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", ...args],
+      { env: { ...process.env, ...WORKER_ENV } });
+    let out = "", err = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (err += d));
+    const timer = setTimeout(() => { child.kill(); reject(new Error("worker timed out")); }, timeoutMs);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(out);
+      else reject(new Error(stripAnsi(err || out).trim().split("\n").pop() || `worker exited ${code}`));
+    });
+  });
+}
+
+/** What training would cost and how it would run. Spends nothing. */
+export async function getPlan(id: string): Promise<TrainPlan> {
+  runDir(id);
+  return JSON.parse(await worker(["plan", "--run", id, "--json"]));
+}
+
+/** Starts the paid training run in the background; progress is read back by getStatus. */
+export async function startTraining(id: string): Promise<void> {
+  const dir = runDir(id);
+  const log = createWriteStream(path.join(dir, "train.log"), { flags: "a" });
+  const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", "train", "--run", id, "--yes"],
+    { env: { ...process.env, PYTHONUNBUFFERED: "1", NO_COLOR: "1" } });
+  child.stdout.pipe(log);
+  child.stderr.pipe(log);
+  child.on("error", (e) => log.write(`\nCould not start the trainer: ${e.message}\n`));
+}
+
+async function trainProgress(dir: string, run: Record<string, unknown> | null): Promise<TrainProgress> {
+  const jobState = typeof run?.job_state === "string" ? run.job_state : null;
+  const plan = (run?.tinker_plan ?? {}) as { steps?: number };
+  const metrics = await readOr(path.join(dir, "tinker", "logs", "metrics.jsonl"), (s) => s, "");
+  const steps = metrics.split("\n").filter(Boolean).length;
+  const state: TrainProgress["state"] =
+    jobState === "JOB_STATE_COMPLETED" ? "done"
+    : jobState === "JOB_STATE_FAILED" ? "failed"
+    : jobState ? "running"
+    : "waiting";
+  return {
+    state,
+    steps,
+    totalSteps: plan.steps ?? null,
+    error: typeof run?.error === "string" ? run.error : null,
+    hfRepo: typeof run?.hf_repo === "string" ? run.hf_repo : null,
+  };
 }
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -121,6 +202,7 @@ export async function getStatus(id: string): Promise<RunStatus | null> {
     id,
     status: web.status,
     stages: { read, write, check },
+    train: await trainProgress(dir, run),
     error: failed ? lastError(lines) : null,
     rows: typeof run?.rows === "number" ? run.rows : null,
     estTokens: typeof run?.est_tokens === "number" ? run.est_tokens : null,

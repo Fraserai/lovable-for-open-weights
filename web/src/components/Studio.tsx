@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { BRAND } from "@/lib/brand";
-import type { RunStatus, Stage } from "@/lib/runs";
+import type { RunStatus, Stage, TrainPlan } from "@/lib/runs";
 import type { Brief } from "./Composer";
 import { formatBytes } from "./Composer";
 import { Check, Doc, Logo } from "./icons";
@@ -25,6 +25,9 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
   const [run, setRun] = useState<RunStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<TrainPlan | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   // Poll the run while the worker is busy
   useEffect(() => {
@@ -35,7 +38,7 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
       if (!alive || !res.ok) return;
       const next: RunStatus = await res.json();
       setRun(next);
-      if (next.status === "running") setTimeout(tick, 1500);
+      if (next.status === "running" || next.train.state === "running") setTimeout(tick, 2000);
     };
     tick();
     return () => { alive = false; };
@@ -60,8 +63,43 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
     }
   };
 
-  const stageOf = (key: (typeof STAGES)[number]["key"]): Stage =>
-    run && (key === "read" || key === "write" || key === "check") ? run.stages[key] : "waiting";
+  const reviewCost = async () => {
+    setPlanning(true);
+    setPlanError(null);
+    try {
+      const res = await fetch(`/api/runs/${runId}/train`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not work out the cost.");
+      setPlan(body);
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : "Could not work out the cost.");
+    } finally {
+      setPlanning(false);
+    }
+  };
+
+  const startTraining = async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const res = await fetch(`/api/runs/${runId}/train`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not start training.");
+      setRun((r) => (r ? { ...r, train: { ...r.train, state: "running" } } : r));
+      setTimeout(() => fetch(`/api/runs/${runId}`).then((r) => r.json()).then(setRun).catch(() => {}), 2000);
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : "Could not start training.");
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const stageOf = (key: (typeof STAGES)[number]["key"]): Stage => {
+    if (!run) return "waiting";
+    if (key === "train") return run.train.state;
+    if (key === "handback") return run.train.hfRepo ? "done" : "waiting";
+    return run.stages[key];
+  };
   const busy = starting || run?.status === "running";
 
   return (
@@ -165,15 +203,74 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
                   <p className="mt-2 rounded-xl border border-line bg-surface p-3">{run.systemPrompt}</p>
                 </details>
               )}
-              <div className="flex flex-wrap items-center gap-3 pt-1">
-                <button type="button" disabled title="Starting paid training from here is the next build step"
-                        className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-ground disabled:opacity-40">
-                  Review cost and train
+              {run.stages.check === "done" && run.train.state === "waiting" && !plan && (
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <button type="button" onClick={reviewCost} disabled={planning}
+                          className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-ground transition hover:opacity-90 disabled:opacity-40">
+                    {planning ? "Working out the cost…" : "Review cost and train"}
+                  </button>
+                  {planError && <span className="text-sm text-red-600 dark:text-red-400">{planError}</span>}
+                </div>
+              )}
+            </Assistant>
+          )}
+
+          {plan && run?.train.state === "waiting" && (
+            <Assistant>
+              <p>Here&apos;s what training costs before anything is spent:</p>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-2xl border border-line bg-surface p-4 text-sm sm:grid-cols-4">
+                <div><dt className="text-faint">Examples</dt><dd className="mt-0.5 font-medium">{plan.examples.toLocaleString()}</dd></div>
+                <div><dt className="text-faint">Passes over data</dt><dd className="mt-0.5 font-medium">{plan.epochs}</dd></div>
+                <div><dt className="text-faint">Training steps</dt><dd className="mt-0.5 font-medium">{plan.steps.toLocaleString()}</dd></div>
+                <div>
+                  <dt className="text-faint">Estimated cost</dt>
+                  <dd className="mt-0.5 font-medium">
+                    {plan.est_cost === null ? "shown by the trainer"
+                      : plan.est_cost < 0.01 ? "under 1¢" : `$${plan.est_cost.toFixed(2)}`}
+                  </dd>
+                </div>
+              </dl>
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" onClick={startTraining} disabled={starting}
+                        className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-ground transition hover:opacity-90 disabled:opacity-40">
+                  {starting ? "Starting…" : "Start training"}
                 </button>
-                <span className="text-sm text-faint">
-                  For now, train from the terminal: <code className="font-mono">trainloop train --run {run.id}</code>
-                </span>
+                <button type="button" onClick={() => setPlan(null)}
+                        className="rounded-full border border-line px-4 py-2 text-sm transition hover:bg-surface">Not yet</button>
+                {startError && <span className="text-sm text-red-600 dark:text-red-400">{startError}</span>}
               </div>
+              <p className="text-sm text-faint">This is the only step that costs money. {plan.trainer === "tinker" ? "Tinker" : "Fireworks"} charges for the training tokens above.</p>
+            </Assistant>
+          )}
+
+          {run?.train.state === "running" && (
+            <Assistant>
+              <p className="flex items-center gap-2 text-muted">
+                <span className="size-2 animate-pulse rounded-full bg-accent" />
+                Training your model{run.train.totalSteps ? `: step ${run.train.steps} of ${run.train.totalSteps}` : "…"}
+              </p>
+            </Assistant>
+          )}
+
+          {run?.train.state === "failed" && (
+            <Assistant>
+              <p>Training stopped before it finished:</p>
+              <p className="rounded-xl border border-red-300/60 bg-red-50 px-4 py-3 font-mono text-sm text-red-800 dark:border-red-400/30 dark:bg-red-950/40 dark:text-red-200">
+                {run.train.error ?? "See train.log in the run folder."}
+              </p>
+            </Assistant>
+          )}
+
+          {run?.train.state === "done" && (
+            <Assistant>
+              <p><b>Your model is trained.</b> It learned from your documents and it&apos;s yours to keep.</p>
+              <p className="text-muted">
+                To download it, or push it to a private Hugging Face repo, run:{" "}
+                <code className="font-mono text-sm">trainloop fetch --run {run.id} --hf-repo you/name</code>
+              </p>
+              {run.train.hfRepo && (
+                <p>Published privately at <a href={run.train.hfRepo} target="_blank" rel="noreferrer" className="underline">{run.train.hfRepo}</a></p>
+              )}
             </Assistant>
           )}
         </section>
