@@ -153,8 +153,11 @@ def truncated_share(dataset: Path, base_model: str, max_length: int, sample: int
     return over / seen if seen else 0.0
 
 
-def plan(train_jsonl: Path, work_dir: Path, base_model: str) -> dict:
-    """Everything decided before any money is spent. Also refuses unverified models."""
+def plan(train_jsonl: Path, work_dir: Path, base_model: str, learning_rate: float | None = None) -> dict:
+    """Everything decided before any money is spent. Also refuses unverified models.
+
+    `learning_rate` overrides the default for families Tinker hasn't calibrated.
+    """
     ensure_ssl_certificates()
     renderer = resolve_renderer(base_model)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -170,7 +173,7 @@ def plan(train_jsonl: Path, work_dir: Path, base_model: str) -> dict:
         "batch_size": batch,
         "epochs": epochs,
         "steps": (examples // batch) * epochs,
-        "learning_rate": resolve_learning_rate(base_model),
+        "learning_rate": learning_rate or resolve_learning_rate(base_model),
         "lora_rank": LORA_RANK,
         "max_length": max_length,
         "truncated_share": truncated_share(expanded, base_model, max_length),
