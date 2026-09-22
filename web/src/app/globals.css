@@ -8,10 +8,10 @@
   --faint: #8a93a6;
   --line: #e3e6ec;
   --accent: #0f766e;
-  --glow-teal: #2dd4bf;
-  --glow-blue: #4f73ff;
-  --glow-violet: #9b7bff;
-  --glow-amber: #ffb870;
+  --glow-blue: #4a6cff;
+  --glow-violet: #8f6bff;
+  --glow-gold: #ffb23e;
+  --glow-sun: #ffd978;
   --shadow: 0 1px 2px rgb(17 23 38 / 0.06), 0 12px 40px -12px rgb(17 23 38 / 0.25);
 }
 
@@ -54,21 +54,22 @@ body {
   pointer-events: none;
 }
 .glow::before {
+  /* Colour rising from the bottom of the page: blue at the edges, gold at the centre (the weights are the gold) */
   content: "";
   position: absolute;
-  inset: 22% -20% -40% -20%;
+  inset: 34% -15% -30% -15%;
   background:
-    radial-gradient(40% 45% at 18% 55%, var(--glow-blue) 0%, transparent 70%),
-    radial-gradient(35% 40% at 82% 50%, var(--glow-teal) 0%, transparent 70%),
-    radial-gradient(45% 45% at 50% 85%, var(--glow-violet) 0%, transparent 70%),
-    radial-gradient(30% 35% at 8% 95%, var(--glow-amber) 0%, transparent 70%),
-    radial-gradient(30% 35% at 94% 95%, var(--glow-amber) 0%, transparent 70%);
-  filter: blur(36px) saturate(1.2);
-  opacity: 1;
+    radial-gradient(30% 34% at 50% 80%, var(--glow-sun) 0%, transparent 75%),
+    radial-gradient(50% 48% at 50% 76%, var(--glow-gold) 0%, transparent 72%),
+    radial-gradient(40% 60% at 6% 55%, var(--glow-blue) 0%, transparent 72%),
+    radial-gradient(40% 60% at 94% 55%, var(--glow-blue) 0%, transparent 72%),
+    radial-gradient(45% 45% at 24% 76%, var(--glow-violet) 0%, transparent 70%),
+    radial-gradient(45% 45% at 76% 76%, var(--glow-violet) 0%, transparent 70%);
+  filter: blur(28px) saturate(1.15);
   animation: drift 18s ease-in-out infinite alternate;
 }
 @media (prefers-color-scheme: dark) {
-  .glow::before { opacity: 0.55; }
+  .glow::before { opacity: 0.6; }
 }
 @keyframes drift {
   from { transform: translate3d(0, 0, 0) scale(1); }

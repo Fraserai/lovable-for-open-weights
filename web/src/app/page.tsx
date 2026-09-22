@@ -7,12 +7,6 @@ import Studio from "@/components/Studio";
 import { Logo } from "@/components/icons";
 import { BRAND } from "@/lib/brand";
 
-const EXAMPLES = [
-  "Answer member questions about fees and insurance",
-  "Draft replies to complaints in our house style",
-  "Explain our super investment options simply",
-];
-
 const NAV = ["How it works", "Models", "Security", "Pricing"];
 
 export default function Home() {
@@ -38,26 +32,18 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-24 pt-10 text-center sm:px-6">
+      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-[22vh] pt-10 text-center sm:px-6">
         <h1 className="font-display text-[clamp(40px,7vw,76px)] leading-[1.02] font-extrabold tracking-[-0.035em] text-balance">
           Train a model that&apos;s yours
         </h1>
         <p className="mt-4 max-w-xl text-lg text-balance text-muted sm:text-xl">
-          Bring your documents, say what the model should do, and get back open weights you own.
+          Pick any open model, bring your content, and get back weights you own.
         </p>
 
         <div className="mt-10 w-full max-w-[760px]">
-          <Composer onSubmit={setBrief} examples={EXAMPLES} />
+          <Composer onSubmit={setBrief} />
         </div>
       </main>
-
-      <footer className="relative z-10 flex flex-wrap justify-center gap-x-6 gap-y-1 px-4 pb-6 text-sm text-ink/70">
-        <span>Any open model</span>
-        <span aria-hidden>·</span>
-        <span>Your data never trains anyone else&apos;s model</span>
-        <span aria-hidden>·</span>
-        <span>Weights you can take anywhere</span>
-      </footer>
     </div>
   );
 }
