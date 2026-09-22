@@ -8,6 +8,7 @@ ones onto chat messages and say plainly when a row doesn't fit.
 """
 
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -32,6 +33,20 @@ class DatasetError(ValueError):
     pass
 
 
+class _Blank(dict):
+    """format_map helper: a missing or empty column renders as nothing instead of failing."""
+    def __missing__(self, key):
+        return ""
+
+
+def render(template: str, row: dict) -> str:
+    """Fill {Column} placeholders from a row (case-insensitive). Blank sections collapse."""
+    values = _Blank({str(k).strip().lower(): ("" if v is None else str(v).strip()) for k, v in row.items()})
+    text = re.sub(r"\{([^{}]+)\}", lambda m: "{" + m.group(1).strip().lower() + "}", template).format_map(values)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 def _clean(messages: list[dict]) -> list[dict] | None:
     out = []
     for m in messages:
@@ -43,12 +58,19 @@ def _clean(messages: list[dict]) -> list[dict] | None:
     return out if any(m["role"] == "assistant" for m in out) else None
 
 
-def to_messages(row: dict, fields: tuple[str, str] | None = None) -> list[dict] | None:
+def to_messages(row: dict, fields: tuple[str, str] | None = None,
+                templates: tuple[str, str] | None = None) -> list[dict] | None:
     """Map one dataset row onto chat messages, or None if it has no usable pair.
 
-    `fields` names the (user, assistant) columns explicitly, for datasets whose column
-    names we don't recognise.
+    `fields` names the (user, assistant) columns explicitly. `templates` builds each side from
+    several columns, e.g. ("{Issue}\n\nFacts: {Facts}", "{Decision}\n\n{Reasons_for_Decision}"),
+    so context that decides the answer isn't left out.
     """
+    if templates:
+        user, assistant = render(templates[0], row), render(templates[1], row)
+        if user and assistant:
+            return [{"role": "user", "content": user}, {"role": "assistant", "content": assistant}]
+        return None
     row = {str(k).strip().lower(): v for k, v in row.items()}
     pairs = [(fields[0].lower(), fields[1].lower())] if fields else _PAIRS
 
@@ -68,7 +90,8 @@ def to_messages(row: dict, fields: tuple[str, str] | None = None) -> list[dict] 
     return None
 
 
-def from_jsonl(path: Path, fields: tuple[str, str] | None = None) -> Iterator[list[dict]]:
+def from_jsonl(path: Path, fields: tuple[str, str] | None = None,
+               templates: tuple[str, str] | None = None) -> Iterator[list[dict]]:
     with path.open(encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
             if not line.strip():
@@ -77,7 +100,7 @@ def from_jsonl(path: Path, fields: tuple[str, str] | None = None) -> Iterator[li
                 row = json.loads(line)
             except json.JSONDecodeError as e:
                 raise DatasetError(f"{path.name} line {line_no} isn't valid JSON.") from e
-            messages = to_messages(row, fields) if isinstance(row, dict) else None
+            messages = to_messages(row, fields, templates) if isinstance(row, dict) else None
             if messages:
                 yield messages
 
@@ -95,7 +118,8 @@ def hub_splits(repo: str, client: httpx.Client | None = None) -> list[tuple[str,
 
 
 def from_hub(repo: str, split: str | None = None, config: str | None = None, limit: int = 200,
-             client: httpx.Client | None = None, fields: tuple[str, str] | None = None) -> Iterator[list[dict]]:
+             client: httpx.Client | None = None, fields: tuple[str, str] | None = None,
+             templates: tuple[str, str] | None = None) -> Iterator[list[dict]]:
     """Stream rows from a public Hugging Face dataset, mapped to chat messages."""
     c = client or httpx.Client(timeout=120)
     try:
@@ -116,7 +140,7 @@ def from_hub(repo: str, split: str | None = None, config: str | None = None, lim
             if not rows:
                 return
             for item in rows:
-                messages = to_messages(item.get("row", {}), fields)
+                messages = to_messages(item.get("row", {}), fields, templates)
                 if messages:
                     yield messages
                     sent += 1

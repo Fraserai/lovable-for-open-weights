@@ -127,6 +127,8 @@ def dataset(
     limit: Annotated[int, typer.Option(help="Rows to take")] = 200,
     user_field: Annotated[Optional[str], typer.Option(help="Column holding the question")] = None,
     assistant_field: Annotated[Optional[str], typer.Option(help="Column holding the answer")] = None,
+    user_template: Annotated[Optional[str], typer.Option(help='Build the question from columns, e.g. "{Issue}\\n\\nFacts: {Facts}"')] = None,
+    assistant_template: Annotated[Optional[str], typer.Option(help='Build the answer from columns, e.g. "{Decision}\\n\\n{Reasons}"')] = None,
     base_model: Annotated[str, typer.Option(help="Base model to train")] = config.DEFAULT_BASE_MODEL,
 ):
     """Build a run from a ready-made dataset. No documents, no generator, no cost."""
@@ -137,13 +139,19 @@ def dataset(
     fields = (user_field, assistant_field) if user_field and assistant_field else None
     if (user_field or assistant_field) and not fields:
         raise typer.BadParameter("--user-field and --assistant-field go together")
+    templates = None
+    if user_template or assistant_template:
+        if not (user_template and assistant_template):
+            raise typer.BadParameter("--user-template and --assistant-template go together")
+        # Let people type \n on the command line for a line break
+        templates = (user_template.replace("\\n", "\n"), assistant_template.replace("\\n", "\n"))
 
     run_dir = _run_dir(run)
     run_dir.mkdir(parents=True, exist_ok=True)
     out = run_dir / "train.jsonl"
     try:
-        rows = (datasets.from_hub(hf, split=split, config=config_name, limit=limit, fields=fields)
-                if hf else datasets.from_jsonl(file, fields=fields))
+        rows = (datasets.from_hub(hf, split=split, config=config_name, limit=limit, fields=fields, templates=templates)
+                if hf else datasets.from_jsonl(file, fields=fields, templates=templates))
         count = datasets.write_rows(rows, out, system_prompt=goal)
     except datasets.DatasetError as e:
         typer.secho(str(e), fg="red")
@@ -155,7 +163,7 @@ def dataset(
     _save(run_dir, {
         "name": run, "goal": goal, "base_model": base_model,
         "source": {"hf": hf, "file": str(file) if file else None, "config": config_name,
-                   "split": split, "limit": limit},
+                   "split": split, "limit": limit, "templates": list(templates) if templates else None},
         "system_prompt": goal, "rows": report.valid, "est_tokens": report.est_tokens,
         "trainer": config.trainer_for(base_model),
     })

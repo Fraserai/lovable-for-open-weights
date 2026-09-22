@@ -107,3 +107,16 @@ def test_dataset_with_no_usable_rows_explains_what_is_needed(tmp_path):
         assert "question+answer" in str(e) and "--user-field" in str(e)
     else:
         raise AssertionError("expected DatasetError")
+
+
+def test_templates_build_examples_from_several_columns():
+    from trainloop.datasets import to_messages
+
+    row = {"Issue": "Is X deductible?", "Facts": "Bought a van.", "Decision": "Yes.", "Reasons_for_Decision": "s 8-1 applies."}
+    msgs = to_messages(row, templates=("{Issue}\n\nFacts: {Facts}", "{Decision}\n\n{Reasons_for_Decision}"))
+    assert msgs[0]["content"] == "Is X deductible?\n\nFacts: Bought a van."
+    assert msgs[1]["content"] == "Yes.\n\ns 8-1 applies."
+    # a missing column renders as nothing rather than failing the row
+    partial = to_messages({"Issue": "Q?", "Decision": "A."}, templates=("{Issue}\n\n{Facts}", "{Decision}"))
+    assert partial == [{"role": "user", "content": "Q?"}, {"role": "assistant", "content": "A."}]
+    assert to_messages({"Issue": ""}, templates=("{Issue}", "{Decision}")) is None
