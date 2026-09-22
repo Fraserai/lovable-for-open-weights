@@ -1,36 +1,54 @@
 # worker
 
-Headless version of the first loop: documents + goal → training JSONL → fine-tune GLM-5.3-Flash on
-Fireworks → adapter back (download or private Hugging Face repo). The chat UI will call into this later.
+The `trainloop` command: documents or a dataset + a goal → training data → fine-tune on Fireworks or
+Tinker → model back (download or private Hugging Face repo). The web app calls these same commands.
 
 ## Setup
 
 ```bash
-cp ../.env.example ../.env   # then fill in the keys
-uv sync
+cp ../.env.example ../.env   # fill in the keys you need
+uv sync                      # includes the Tinker SDK (large: torch). Skip it: uv sync --no-group tinker
 ```
+
+Keys by step: `OPENROUTER_API_KEY` (or `OPENAI_API_KEY` with `GENERATOR_PROVIDER=openai`, test docs only)
+to write examples; `TINKER_API_KEY` or `FIREWORKS_API_KEY` + `FIREWORKS_ACCOUNT_ID` to train;
+`HF_TOKEN` (write) to publish.
 
 ## Use
 
 ```bash
-# 1. Parse + chunk only (free), to sanity-check the documents
-uv run trainloop prepare ./docs --goal "Answer member questions about fees and insurance" --run acme-faq --preview
+# 1a. From documents: parse (free with --preview), then write examples
+uv run trainloop prepare ./docs --goal "Answer member questions about fees" --run acme-faq --preview
+uv run trainloop prepare ./docs --goal "..." --run acme-faq --base-model Qwen/Qwen3.5-4B --max-chunks 20
 
-# 2. Write training examples (OpenRouter, zero-data-retention providers only) and validate them
-uv run trainloop prepare ./docs --goal "..." --run acme-faq --max-chunks 20
+# 1b. Or from a ready-made dataset (no example writing, no cost)
+uv run trainloop dataset --run ato --hf simplelex/ATO-Australian-Tax-Rulings-and-Guidance \
+    --config ato_interpretative_decisions --limit 300 --base-model Qwen/Qwen3.5-4B --goal "..."
+uv run trainloop dataset --run mine --file data.jsonl --goal "..."
 
-# 3. Start the paid fine-tune (shows the plan and asks first)
-uv run trainloop train --run acme-faq
+# 2. See the plan and cost (free), then train (paid; asks first)
+uv run trainloop plan --run ato
+uv run trainloop train --run ato
 
-# 4. Watch it; saves the trainer's metrics when done
-uv run trainloop status --run acme-faq --wait
+# 3. Progress (Fireworks jobs run remotely; Tinker runs in the foreground of `train`)
+uv run trainloop status --run ato
 
-# 5. Get the model back
-uv run trainloop fetch --run acme-faq --hf-repo your-org/acme-faq
+# 4. Take it home
+uv run trainloop fetch --run ato --hf-repo you/ato-tax-model
 ```
 
-`uv run trainloop validate file.jsonl` checks any JSONL against the trainer's format.
-Everything for a run lives in `../runs/<name>/` (gitignored).
+Other commands: `trainloop validate file.jsonl` checks any dataset; `trainloop catalog` lists what each
+trainer can fine-tune (live).
+
+Everything for a run lives in `../runs/<name>/`, with `run.json` recording progress so steps can be
+re-run or resumed.
+
+## Which trainer
+
+The base model decides: `accounts/fireworks/models/...` trains on Fireworks, a Hugging Face id
+(`Qwen/Qwen3.5-4B`) trains on Tinker. Settings are chosen for you: LoRA rank 32, epochs sized to the
+dataset, and on Tinker its calibrated learning rate and the model's own chat format (unverified
+formats are refused before anything is charged).
 
 ## Tests
 
