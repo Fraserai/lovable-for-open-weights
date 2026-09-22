@@ -201,7 +201,7 @@ def plan_for(run_dir: Path, state: dict, epochs: int | None = None, lora_rank: i
     if trainer == "tinker":
         from . import tinker
 
-        p = tinker.plan(run_dir / "train.jsonl", run_dir / "tinker", base)
+        p = tinker.plan(run_dir / "train.jsonl", run_dir / "tinker", base, state.get("learning_rate"))
         tokens = report.est_tokens * p["epochs"]
         rate = _tinker_rate(base)
         return {**common, "examples": p["examples"], "epochs": p["epochs"], "steps": p["steps"],
@@ -246,6 +246,9 @@ def train(
     run_dir = _run_dir(run)
     state = _load(run_dir)
     if config.trainer_for(state["base_model"]) == "tinker":
+        if learning_rate:  # recorded on the run so plan and train agree
+            state["learning_rate"] = learning_rate
+            _save(run_dir, state)
         _train_tinker(run_dir, state, yes)
         return
     if state.get("job"):
@@ -310,7 +313,7 @@ def _train_tinker(run_dir: Path, state: dict, yes: bool) -> None:
     base = state["base_model"]
     work = run_dir / "tinker"
     try:
-        p = tinker.plan(run_dir / "train.jsonl", work, base)
+        p = tinker.plan(run_dir / "train.jsonl", work, base, state.get("learning_rate"))
     except tinker.TinkerError as e:
         typer.secho(str(e), fg="red")
         raise typer.Exit(1)

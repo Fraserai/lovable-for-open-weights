@@ -29,6 +29,32 @@ def system_prompt(labels: list[str]) -> str:
             "Reply with the intent label only, exactly as written.\n\nIntents: " + ", ".join(labels))
 
 
+def balanced(train: list[dict], per_label: int, seed: int) -> list[dict]:
+    """The same number of examples for every intent, so none is under-taught."""
+    rng, by_label = random.Random(seed), {}
+    for r in train:
+        by_label.setdefault(r["label_text"], []).append(r)
+    picked = [r for rows in by_label.values() for r in rng.sample(rows, min(per_label, len(rows)))]
+    rng.shuffle(picked)
+    return picked
+
+
+def write_train(rows: list[dict], system: str, path: Path) -> None:
+    with path.open("w") as f:
+        for r in rows:
+            f.write(json.dumps({"messages": [{"role": "system", "content": system},
+                                             {"role": "user", "content": r["text"]},
+                                             {"role": "assistant", "content": r["label_text"]}]}) + "\n")
+
+
+def main_balanced(per_label: int = 20, seed: int = 11) -> None:
+    """Balanced training file; keeps the existing test.json so scores stay comparable."""
+    test = json.loads((OUT / "test.json").read_text())
+    rows = balanced(fetch("train"), per_label, seed)
+    write_train(rows, test["system"], OUT / f"train_balanced_{per_label}.jsonl")
+    print(f"wrote {len(rows)} balanced examples ({per_label} per intent) to {OUT}")
+
+
 def main(n_train: int = 1000, n_test: int = 200, seed: int = 7) -> None:
     train, test = fetch("train"), fetch("test")
     labels = sorted({r["label_text"] for r in train})
@@ -49,4 +75,7 @@ def main(n_train: int = 1000, n_test: int = 200, seed: int = 7) -> None:
 
 
 if __name__ == "__main__":
-    main(*map(int, sys.argv[1:]))
+    if sys.argv[1:2] == ["balanced"]:
+        main_balanced(*map(int, sys.argv[2:]))
+    else:
+        main(*map(int, sys.argv[1:]))

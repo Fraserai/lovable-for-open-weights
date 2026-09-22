@@ -42,8 +42,13 @@ def main(run: str) -> None:
     if state.get("sampler_path"):
         models["trained"] = (svc.create_sampling_client(model_path=state["sampler_path"]), trained_r)
 
-    results = {}
+    out = ROOT / "runs" / run / "banking77_scores.json"
+    # The original model's score doesn't change after training; reuse it rather than pay twice.
+    results = json.loads(out.read_text()) if out.exists() else {}
     for name, (client, r) in models.items():
+        if name in results:
+            print(f"{name:9} accuracy {results[name]['accuracy']:.1%}   (reused from the earlier run)")
+            continue
         params = tinker.types.SamplingParams(max_tokens=24, temperature=0.0, stop=r.get_stop_sequences())
         futures = [client.sample(prompt=r.build_generation_prompt([
             {"role": "system", "content": test["system"]}, {"role": "user", "content": row["text"]}]),
@@ -55,7 +60,6 @@ def main(run: str) -> None:
         print(f"{name:9} accuracy {sum(hits)}/{len(hits)} = {sum(hits)/len(hits):.1%}   "
               f"(answered with a real label {valid}/{len(hits)})")
 
-    out = ROOT / "runs" / run / "banking77_scores.json"
     out.write_text(json.dumps(results, indent=2))
     if "trained" in results:
         fixed = [(row["text"], results["original"]["answers"][i], row["label_text"])
