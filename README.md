@@ -38,6 +38,10 @@ Never paste keys into chat or commit `.env`; it is git-ignored.
 
 ## Status (2026-09-23)
 
+- **Proof it improves models:** on Banking77 (77-way intent classification), Qwen3.5-4B went from
+  67.5% to 82.5% exact-match accuracy on 200 held-out messages after training on 1,000 examples
+  (1 epoch, ~41c, ~11 min on Tinker). Reproduce: `worker/scripts/banking77_data.py`, then
+  `trainloop dataset/train`, then `worker/scripts/banking77_score.py <run>`.
 - **Tinker:** proven end to end with real runs (Qwen3.5-4B on a PDS and on 300 ATO decisions),
   published to a private Hugging Face repo.
 - **Fireworks:** built and tested against a mocked API; not yet run for real (needs a Fireworks key).
