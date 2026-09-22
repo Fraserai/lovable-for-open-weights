@@ -44,9 +44,10 @@ Never paste keys into chat or commit `.env`; it is git-ignored.
   `trainloop dataset/train`, then `worker/scripts/banking77_score.py <run>`.
 - **Tinker:** proven end to end with real runs (Qwen3.5-4B on a PDS and on 300 ATO decisions),
   published to a private Hugging Face repo.
-- **Fireworks:** built and tested against a mocked API; not yet run for real (needs a Fireworks key).
-- **Page:** upload, model picker (64 trainable models + Hugging Face search), write examples,
-  review cost, train with live progress. Taking the model home and the side-by-side playground are
-  still terminal-only / not built.
+- **Fireworks:** key, account and a real dataset upload verified live (GLM-5.3-Flash is
+  supervised-LoRA tunable on the account). Training not yet run: the account has no credit.
+- **Page:** upload documents or a dataset, model picker (64 trainable models + Hugging Face
+  search), write examples, review cost, train with live progress, talk to your model side by side
+  with the original, take it home to a private Hugging Face repo, reopen any run at `/runs/<id>`.
 - **Not production-ready:** no login, and training runs as a process of the dev server, so stopping
   the server stops training. Needs a real job runner (see CLAUDE.md) before customers.
