@@ -235,3 +235,39 @@ def fetch(
         state["hf_repo"] = url
         _save(run_dir, state)
         typer.secho(f"Pushed to {url} (private)", fg="green")
+
+
+@app.command()
+def catalog(
+    json_out: Annotated[Optional[Path], typer.Option("--json", help="Write catalog JSON to this file")] = None,
+    trainer: Annotated[Optional[str], typer.Option(help="Filter to one trainer: fireworks or tinker")] = None,
+):
+    """Show which open models each trainer can fine-tune (live sources)."""
+    from .catalog import build_catalog
+
+    entries = build_catalog()
+    if trainer:
+        entries = [e for e in entries if e["trainer"] == trainer.lower()]
+    if not entries:
+        typer.secho("No catalog entries.", fg="yellow")
+        raise typer.Exit(1)
+    if json_out:
+        json_out.write_text(json.dumps(entries, indent=2))
+        typer.echo(f"Wrote {len(entries)} entries to {json_out}")
+        return
+
+    def fmt_params(n: Optional[int]) -> str:
+        return f"{n / 1e9:.1f}B" if isinstance(n, (int, float)) else "-"
+
+    def fmt_ctx(n: Optional[int]) -> str:
+        return f"{n:,}" if isinstance(n, int) else "-"
+
+    typer.echo(f"{'trainer':<10} {'sft':<5} {'dpo':<5} {'ctx':>8} {'params':>10}  model")
+    for e in entries:
+        dpo = "yes" if e["dpo"] else ("no" if e["dpo"] is False else "?")
+        typer.echo(
+            f"{e['trainer']:<10} "
+            f"{'yes' if e['sft_lora'] else 'no':<5} {dpo:<5} "
+            f"{fmt_ctx(e['train_context_tokens']):>8} {fmt_params(e['params']):>10}  "
+            f"{e['trainer_model_id']}"
+        )
