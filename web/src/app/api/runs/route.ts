@@ -1,4 +1,4 @@
-import { MODELS } from "@/lib/models";
+import { findTrainable } from "@/lib/catalog";
 import { newRunId, startPrepare } from "@/lib/runs";
 
 export const runtime = "nodejs";
@@ -12,9 +12,9 @@ export async function POST(req: Request) {
   const modelId = String(form.get("model") ?? "");
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
 
-  const model = MODELS.find((m) => m.id === modelId);
+  const model = await findTrainable(modelId);
   if (!goal) return Response.json({ error: "Describe what the model should do." }, { status: 400 });
-  if (!model) return Response.json({ error: "Unknown base model." }, { status: 400 });
+  if (!model) return Response.json({ error: "No connected trainer can fine-tune that model yet." }, { status: 400 });
   if (!model.ready) return Response.json({ error: `${model.name} on ${model.trainer} isn't connected yet.` }, { status: 400 });
   if (files.length === 0) return Response.json({ error: "Add at least one document." }, { status: 400 });
   if (files.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES) {

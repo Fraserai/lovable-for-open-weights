@@ -185,7 +185,7 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
 
           <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
             <div><dt className="text-faint">Base model</dt><dd className="mt-0.5 font-medium">{model.name}</dd></div>
-            <div><dt className="text-faint">Trainer</dt><dd className="mt-0.5 font-medium">{model.trainer}</dd></div>
+            <div><dt className="text-faint">Trainer</dt><dd className="mt-0.5 font-medium">{model.trainer ?? "None yet"}</dd></div>
             <div><dt className="text-faint">Method</dt><dd className="mt-0.5 font-medium">LoRA, rank 8</dd></div>
             <div><dt className="text-faint">Passes over data</dt><dd className="mt-0.5 font-medium">1 epoch</dd></div>
           </dl>
