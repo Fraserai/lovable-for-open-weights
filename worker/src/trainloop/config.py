@@ -29,4 +29,23 @@ def require(name: str) -> str:
 
 
 def generator_model() -> str:
-    return os.environ.get("GENERATOR_MODEL", "").strip() or DEFAULT_GENERATOR_MODEL
+    default = DEFAULT_OPENAI_GENERATOR_MODEL if generator_provider() == "openai" else DEFAULT_GENERATOR_MODEL
+    return os.environ.get("GENERATOR_MODEL", "").strip() or default
+
+
+# OpenRouter pinned to zero-data-retention providers is the default. OpenAI is opt-in
+# (GENERATOR_PROVIDER=openai) and only for test or public documents: its API keeps data
+# for up to 30 days unless the account has a zero-retention agreement.
+DEFAULT_OPENAI_GENERATOR_MODEL = "gpt-5-mini"
+
+
+def generator_provider() -> str:
+    provider = os.environ.get("GENERATOR_PROVIDER", "").strip().lower() or "openrouter"
+    if provider not in ("openrouter", "openai"):
+        raise MissingConfig(f"GENERATOR_PROVIDER must be openrouter or openai, not {provider!r}.")
+    return provider
+
+
+def trainer_for(base_model: str) -> str:
+    """Fireworks models are named accounts/<acct>/models/<id>; Tinker uses Hugging Face ids."""
+    return "fireworks" if base_model.startswith("accounts/") else "tinker"

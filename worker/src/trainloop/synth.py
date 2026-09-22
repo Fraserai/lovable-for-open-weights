@@ -1,7 +1,8 @@
 """Write chat training examples from document chunks + the customer's plain-English goal.
 
-Chunks are customer content, so every request is pinned to zero-data-retention
-providers on OpenRouter. This is not configurable on purpose.
+Chunks are customer content, so by default every request goes to OpenRouter pinned to
+zero-data-retention providers. OpenAI is an explicit opt-in (GENERATOR_PROVIDER=openai)
+for test or public documents only, since its API retains data unless under a ZDR agreement.
 """
 
 import asyncio
@@ -12,6 +13,7 @@ import httpx
 from .ingest import Chunk
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 ZDR_PROVIDER = {"zdr": True, "data_collection": "deny", "require_parameters": True}
 
 _EXAMPLES_SCHEMA = {
@@ -56,7 +58,10 @@ The organisation's goal for their model:
 Using ONLY the source excerpt below, write {n} realistic conversations that serve that goal.
 - "user": something a real user of this model would plausibly send. Vary phrasing, length and intent.
 - "assistant": the ideal reply, fully grounded in the excerpt. Never invent facts, figures or policies
-  that are not in the excerpt. Match the tone the goal implies.
+  that are not in the excerpt. Simple arithmetic on figures it gives is fine. Match the tone the goal implies.
+- Write the reply as the model itself talking to the user. The user never sees this excerpt, so never
+  refer to "the excerpt", "the source", "the document" or "the text provided". If something isn't
+  covered, say so the way a knowledgeable person would (e.g. suggest who to contact).
 - If the excerpt has little useful content for the goal (e.g. a table of contents, legal boilerplate),
   return fewer examples or an empty list.
 
@@ -74,11 +79,12 @@ It will be used in every training example and at inference time. Do not mention 
 
 class Generator:
     def __init__(self, api_key: str, model: str, transport: httpx.AsyncBaseTransport | None = None,
-                 concurrency: int = 8, max_retries: int = 4):
+                 concurrency: int = 8, max_retries: int = 4, provider: str = "openrouter"):
         self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {api_key}"}, timeout=180, transport=transport
         )
         self._model = model
+        self._provider = provider
         self._sem = asyncio.Semaphore(concurrency)
         self._max_retries = max_retries
 
@@ -90,12 +96,18 @@ class Generator:
             "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_schema", "json_schema": schema},
-            "provider": ZDR_PROVIDER,
-            "temperature": 0.7,
         }
+        if self._provider == "openai":
+            # GPT-5 models are reasoning models: they take reasoning_effort, not temperature.
+            body["reasoning_effort"] = "low"
+            url = OPENAI_URL
+        else:
+            body["provider"] = ZDR_PROVIDER
+            body["temperature"] = 0.7
+            url = OPENROUTER_URL
         async with self._sem:
             for attempt in range(self._max_retries + 1):
-                resp = await self._client.post(OPENROUTER_URL, json=body)
+                resp = await self._client.post(url, json=body)
                 if resp.status_code in (429, 500, 502, 503, 504) and attempt < self._max_retries:
                     await asyncio.sleep(2**attempt)
                     continue

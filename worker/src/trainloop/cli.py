@@ -79,9 +79,16 @@ def prepare(
 
     from .synth import Generator, generate_rows
 
+    provider = config.generator_provider()
     gen_model = config.generator_model()
-    gen = Generator(config.require("OPENROUTER_API_KEY"), gen_model)
-    with typer.progressbar(length=len(chunks), label=f"Writing examples ({gen_model}, ZDR)") as bar:
+    if provider == "openai":
+        typer.secho("Writing examples with OpenAI, which is not zero-data-retention: "
+                    "use test or public documents only.", fg="yellow")
+        gen = Generator(config.require("OPENAI_API_KEY"), gen_model, provider="openai")
+    else:
+        gen = Generator(config.require("OPENROUTER_API_KEY"), gen_model)
+    label = f"Writing examples ({gen_model}{', ZDR' if provider == 'openrouter' else ''})"
+    with typer.progressbar(length=len(chunks), label=label) as bar:
         async def go():
             try:
                 return await generate_rows(gen, chunks, goal, per_chunk, on_progress=lambda: bar.update(1))
@@ -101,6 +108,7 @@ def prepare(
     typer.echo(report.summary())
     _save(run_dir, {
         "name": run, "goal": goal, "base_model": base_model, "generator_model": gen_model,
+        "generator_provider": provider, "trainer": config.trainer_for(base_model),
         "system_prompt": system_prompt, "documents": [str(f) for f in files],
         "chunks": len(chunks), "rows": report.valid, "est_tokens": report.est_tokens,
     })
@@ -120,19 +128,22 @@ def validate(jsonl: Annotated[Path, typer.Argument(exists=True)],
 @app.command()
 def train(
     run: RunOpt,
-    epochs: Annotated[int, typer.Option(min=1, max=10)] = 1,
-    lora_rank: Annotated[int, typer.Option(help="Power of 2, max 32")] = 8,
+    epochs: Annotated[Optional[int], typer.Option(min=1, max=10, help="Default: sized to the dataset")] = None,
+    lora_rank: Annotated[int, typer.Option(help="Power of 2, max 32")] = 32,
     learning_rate: Annotated[Optional[float], typer.Option(help="Leave unset for the model default")] = None,
     yes: Annotated[bool, typer.Option("--yes", help="Skip the confirmation prompt")] = False,
     wait: Annotated[bool, typer.Option(help="Poll until the job finishes")] = False,
 ):
-    """Upload the run's training data and start a (paid) fine-tuning job on Fireworks."""
+    """Start a (paid) fine-tuning run on the trainer that hosts the run's base model."""
     from .fireworks import Fireworks
 
     if lora_rank not in (1, 2, 4, 8, 16, 32):
         raise typer.BadParameter("must be a power of 2 up to 32", param_hint="--lora-rank")
     run_dir = _run_dir(run)
     state = _load(run_dir)
+    if config.trainer_for(state["base_model"]) == "tinker":
+        _train_tinker(run_dir, state, yes)
+        return
     if state.get("job"):
         typer.secho(f"Run already has job {state['job']}. Use `trainloop status --run {run}`.", fg="yellow")
         raise typer.Exit(1)
@@ -144,6 +155,9 @@ def train(
         typer.secho("Fix the errors above before training.", fg="red")
         raise typer.Exit(1)
 
+    # Small datasets need several passes to learn anything (Post Trainer's 1-epoch runs under-learned);
+    # aim for a step count at Fireworks' default batch of 32 samples, capped at 4 epochs.
+    epochs = epochs or max(1, min(4, -(-250 // max(1, report.valid // 32))))
     typer.echo(
         f"Base model:   {state['base_model']}\n"
         f"Examples:     {report.valid:,}  (~{report.est_tokens:,} tokens x {epochs} epoch(s) "
@@ -175,6 +189,58 @@ def train(
         status(run=run, wait=True)
 
 
+def _train_tinker(run_dir: Path, state: dict, yes: bool) -> None:
+    """Tinker trains in this process: plan (free) -> confirm -> train (paid). Blocks until done."""
+    from . import tinker
+    from .catalog import build_catalog
+
+    if state.get("job_state") in ("JOB_STATE_RUNNING", "JOB_STATE_COMPLETED"):
+        typer.secho(f"Run is already {state['job_state']}. Use `trainloop fetch --run {state['name']}`.", fg="yellow")
+        raise typer.Exit(1)
+    report = validate_jsonl(run_dir / "train.jsonl")
+    if not report.ok:
+        typer.echo(report.summary())
+        typer.secho("Fix the errors above before training.", fg="red")
+        raise typer.Exit(1)
+
+    base = state["base_model"]
+    work = run_dir / "tinker"
+    try:
+        p = tinker.plan(run_dir / "train.jsonl", work, base)
+    except tinker.TinkerError as e:
+        typer.secho(str(e), fg="red")
+        raise typer.Exit(1)
+
+    tokens = report.est_tokens * p["epochs"]
+    rate = next((e["train_price"] for e in build_catalog() if e["trainer"] == "tinker"
+                 and e["trainer_model_id"] == base), None)
+    cost = f"~${tokens / 1e6 * float(rate.lstrip('$')):.4f} at {rate}/M tokens" if rate else "unknown (no published rate)"
+    typer.echo(
+        f"Base model:    {base} (Tinker)\n"
+        f"Examples:      {p['examples']:,}  x {p['epochs']} epoch(s) = {p['steps']} steps, ~{tokens:,} training tokens\n"
+        f"Settings:      LoRA rank {p['lora_rank']}, learning rate {p['learning_rate']:.2e}, "
+        f"chat format {p['renderer']}, context {p['max_length']:,}\n"
+        f"Est. cost:     {cost}"
+    )
+    if p["truncated_share"] > 0.02:
+        typer.secho(f"Note: ~{p['truncated_share']:.0%} of examples exceed {p['max_length']:,} tokens and will be cut.",
+                    fg="yellow")
+    if not yes:
+        typer.confirm("This starts a paid Tinker run. Continue?", abort=True)
+
+    state.update(job="tinker", job_state="JOB_STATE_RUNNING", tinker_plan=p)
+    _save(run_dir, state)
+    try:
+        sampler = tinker.train(work, base, p, on_progress=lambda msg: typer.echo(f"  {msg}"))
+    except Exception as e:
+        state.update(job_state="JOB_STATE_FAILED", error=str(e))
+        _save(run_dir, state)
+        raise
+    state.update(job_state="JOB_STATE_COMPLETED", sampler_path=sampler)
+    _save(run_dir, state)
+    typer.secho(f"Done. Get the model: trainloop fetch --run {state['name']} [--hf-repo you/name]", fg="green")
+
+
 def _print_job(job: dict) -> None:
     progress = job.get("jobProgress") or {}
     pct = f" {progress['percent']}%" if "percent" in progress else ""
@@ -193,6 +259,9 @@ def status(run: RunOpt, wait: Annotated[bool, typer.Option(help="Poll until the 
     if not state.get("job"):
         typer.secho(f"No job yet. Run `trainloop train --run {run}`.", fg="yellow")
         raise typer.Exit(1)
+    if state["job"] == "tinker":  # Tinker runs in the foreground; its state is recorded as it goes
+        typer.echo(state.get("job_state", "unknown") + (f"  {state['error']}" if state.get("error") else ""))
+        return
     fw = Fireworks(config.require("FIREWORKS_API_KEY"), config.require("FIREWORKS_ACCOUNT_ID"))
     try:
         job = fw.wait_sft_job(state["job"], on_update=_print_job) if wait else fw.get_sft_job(state["job"])
@@ -227,11 +296,18 @@ def fetch(
         raise typer.Exit(1)
 
     dest = run_dir / "model"
-    fw = Fireworks(config.require("FIREWORKS_API_KEY"), config.require("FIREWORKS_ACCOUNT_ID"))
-    try:
-        files = fw.download_model(run, dest)
-    finally:
-        fw.close()
+    if state["job"] == "tinker":
+        from . import tinker
+
+        typer.echo("Downloading the trained weights and converting them to a standard LoRA adapter ...")
+        tinker.export_adapter(run_dir / "tinker", dest)
+        files = [f for f in dest.rglob("*") if f.is_file()]
+    else:
+        fw = Fireworks(config.require("FIREWORKS_API_KEY"), config.require("FIREWORKS_ACCOUNT_ID"))
+        try:
+            files = fw.download_model(run, dest)
+        finally:
+            fw.close()
     typer.echo(f"Downloaded {len(files)} files to {dest}")
 
     if hf_repo:
