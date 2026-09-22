@@ -72,3 +72,38 @@ def test_replies_that_mention_source_material_are_caught():
     assert leaks_source("According to the document, fees are monthly.")
     assert not leaks_source("Fees are deducted monthly. For anything else, contact the fund.")
     assert not leaks_source("You can send documents to the fund by post.")
+
+
+def test_dataset_rows_map_to_chat_messages():
+    from trainloop.datasets import to_messages
+
+    ato = to_messages({"Issue": "Is X taxable?", "Decision": "Yes.", "Facts": "..."})
+    assert ato == [{"role": "user", "content": "Is X taxable?"}, {"role": "assistant", "content": "Yes."}]
+    sharegpt = to_messages({"conversations": [{"from": "human", "value": "hi"}, {"from": "gpt", "value": "hello"}]})
+    assert sharegpt == [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+    alpaca = to_messages({"instruction": "Summarise", "input": "Long text", "output": "Short"})
+    assert alpaca[0]["content"] == "Summarise\n\nLong text"
+    assert to_messages({"title": "t", "body": "b"}, ("Title", "Body"))[1]["content"] == "b"
+    assert to_messages({"nothing": "useful"}) is None
+    assert to_messages({"question": "q", "answer": ""}) is None  # empty answer teaches nothing
+
+
+def test_dataset_rows_get_the_goal_as_system_prompt(tmp_path):
+    from trainloop.datasets import write_rows
+
+    out = tmp_path / "train.jsonl"
+    rows = iter([[{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]])
+    assert write_rows(rows, out, system_prompt="Be an expert") == 1
+    msgs = json.loads(out.read_text())["messages"]
+    assert msgs[0] == {"role": "system", "content": "Be an expert"}
+
+
+def test_dataset_with_no_usable_rows_explains_what_is_needed(tmp_path):
+    from trainloop.datasets import DatasetError, write_rows
+
+    try:
+        write_rows(iter([]), tmp_path / "out.jsonl", system_prompt=None)
+    except DatasetError as e:
+        assert "question+answer" in str(e) and "--user-field" in str(e)
+    else:
+        raise AssertionError("expected DatasetError")

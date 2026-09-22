@@ -117,12 +117,108 @@ def prepare(
 
 
 @app.command()
+def dataset(
+    run: RunOpt,
+    goal: Annotated[str, typer.Option(help="What the model should do (used as its instructions)")],
+    hf: Annotated[Optional[str], typer.Option("--hf", help="Hugging Face dataset, e.g. isaacus/open-australian-legal-qa")] = None,
+    file: Annotated[Optional[Path], typer.Option(exists=True, help="A JSONL dataset on disk")] = None,
+    config_name: Annotated[Optional[str], typer.Option("--config", help="Dataset config (Hugging Face)")] = None,
+    split: Annotated[Optional[str], typer.Option(help="Dataset split (Hugging Face)")] = None,
+    limit: Annotated[int, typer.Option(help="Rows to take")] = 200,
+    user_field: Annotated[Optional[str], typer.Option(help="Column holding the question")] = None,
+    assistant_field: Annotated[Optional[str], typer.Option(help="Column holding the answer")] = None,
+    base_model: Annotated[str, typer.Option(help="Base model to train")] = config.DEFAULT_BASE_MODEL,
+):
+    """Build a run from a ready-made dataset. No documents, no generator, no cost."""
+    from . import datasets
+
+    if bool(hf) == bool(file):
+        raise typer.BadParameter("give exactly one of --hf or --file")
+    fields = (user_field, assistant_field) if user_field and assistant_field else None
+    if (user_field or assistant_field) and not fields:
+        raise typer.BadParameter("--user-field and --assistant-field go together")
+
+    run_dir = _run_dir(run)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    out = run_dir / "train.jsonl"
+    try:
+        rows = (datasets.from_hub(hf, split=split, config=config_name, limit=limit, fields=fields)
+                if hf else datasets.from_jsonl(file, fields=fields))
+        count = datasets.write_rows(rows, out, system_prompt=goal)
+    except datasets.DatasetError as e:
+        typer.secho(str(e), fg="red")
+        raise typer.Exit(1)
+
+    report = validate_jsonl(out, config.BASE_MODEL_TRAIN_CTX.get(base_model))
+    typer.echo(f"{count:,} rows from {hf or file.name}")
+    typer.echo(report.summary())
+    _save(run_dir, {
+        "name": run, "goal": goal, "base_model": base_model,
+        "source": {"hf": hf, "file": str(file) if file else None, "config": config_name,
+                   "split": split, "limit": limit},
+        "system_prompt": goal, "rows": report.valid, "est_tokens": report.est_tokens,
+        "trainer": config.trainer_for(base_model),
+    })
+    typer.secho(f"Wrote {out}. Next: trainloop plan --run {run}", fg="green" if report.ok else "red")
+
+
+@app.command()
 def validate(jsonl: Annotated[Path, typer.Argument(exists=True)],
              base_model: str = config.DEFAULT_BASE_MODEL):
     """Check a JSONL file against the trainer's format before paying for a run."""
     report = validate_jsonl(jsonl, config.BASE_MODEL_TRAIN_CTX.get(base_model))
     typer.echo(report.summary())
     raise typer.Exit(0 if report.ok else 1)
+
+
+def _tinker_rate(base_model: str) -> float | None:
+    """Tinker's published training price per million tokens, from the live catalog."""
+    from .catalog import build_catalog
+
+    price = next((e["train_price"] for e in build_catalog()
+                  if e["trainer"] == "tinker" and e["trainer_model_id"] == base_model), None)
+    try:
+        return float(price.lstrip("$")) if price else None
+    except ValueError:
+        return None
+
+
+def plan_for(run_dir: Path, state: dict, epochs: int | None = None, lora_rank: int = 32) -> dict:
+    """What a run would cost and how it would be trained. Spends nothing."""
+    base = state["base_model"]
+    trainer = config.trainer_for(base)
+    report = validate_jsonl(run_dir / "train.jsonl", config.BASE_MODEL_TRAIN_CTX.get(base))
+    common = {"trainer": trainer, "base_model": base, "rows": report.valid,
+              "ok": report.ok, "report": report.summary().splitlines()}
+    if trainer == "tinker":
+        from . import tinker
+
+        p = tinker.plan(run_dir / "train.jsonl", run_dir / "tinker", base)
+        tokens = report.est_tokens * p["epochs"]
+        rate = _tinker_rate(base)
+        return {**common, "examples": p["examples"], "epochs": p["epochs"], "steps": p["steps"],
+                "tokens": tokens, "lora_rank": p["lora_rank"], "renderer": p["renderer"],
+                "max_length": p["max_length"], "truncated_share": p["truncated_share"],
+                "rate_per_million": rate, "est_cost": (tokens / 1e6 * rate) if rate else None}
+    epochs = epochs or max(1, min(4, -(-250 // max(1, report.valid // 32))))
+    return {**common, "examples": report.valid, "epochs": epochs,
+            "steps": max(1, report.valid // 32) * epochs, "tokens": report.est_tokens * epochs,
+            "lora_rank": lora_rank, "rate_per_million": None, "est_cost": None}
+
+
+@app.command()
+def plan(run: RunOpt, as_json: Annotated[bool, typer.Option("--json", help="Machine-readable")] = False):
+    """Show how a run would be trained and what it would cost. Spends nothing."""
+    run_dir = _run_dir(run)
+    p = plan_for(run_dir, _load(run_dir))
+    if as_json:
+        typer.echo(json.dumps(p))
+        return
+    cost = f"~${p['est_cost']:.4f} at ${p['rate_per_million']}/M tokens" if p["est_cost"] else "not published by this trainer"
+    typer.echo(f"Base model: {p['base_model']} ({p['trainer']})\n"
+               f"Examples:   {p['examples']:,} x {p['epochs']} epoch(s) = {p['steps']} steps, ~{p['tokens']:,} tokens\n"
+               f"LoRA rank:  {p['lora_rank']}\n"
+               f"Est. cost:  {cost}")
 
 
 @app.command()
