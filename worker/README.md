@@ -18,24 +18,29 @@ to write examples; `TINKER_API_KEY` or `FIREWORKS_API_KEY` + `FIREWORKS_ACCOUNT_
 
 ```bash
 # 1a. From documents: parse (free with --preview), then write examples
-uv run trainloop prepare ./docs --goal "Answer member questions about fees" --run acme-faq --preview
-uv run trainloop prepare ./docs --goal "..." --run acme-faq --base-model Qwen/Qwen3.5-4B --max-chunks 20
+./trainloop prepare ./docs --goal "Answer member questions about fees" --run acme-faq --preview
+./trainloop prepare ./docs --goal "..." --run acme-faq --base-model Qwen/Qwen3.5-4B --max-chunks 20
 
 # 1b. Or from a ready-made dataset (no example writing, no cost)
-uv run trainloop dataset --run ato --hf simplelex/ATO-Australian-Tax-Rulings-and-Guidance \
+./trainloop dataset --run ato --hf simplelex/ATO-Australian-Tax-Rulings-and-Guidance \
     --config ato_interpretative_decisions --limit 300 --base-model Qwen/Qwen3.5-4B --goal "..."
-uv run trainloop dataset --run mine --file data.jsonl --goal "..."
+./trainloop dataset --run mine --file data.jsonl --goal "..."
 
 # 2. See the plan and cost (free), then train (paid; asks first)
-uv run trainloop plan --run ato
-uv run trainloop train --run ato
+./trainloop plan --run ato
+./trainloop train --run ato
 
 # 3. Progress (Fireworks jobs run remotely; Tinker runs in the foreground of `train`)
-uv run trainloop status --run ato
+./trainloop status --run ato
 
 # 4. Take it home
-uv run trainloop fetch --run ato --hf-repo you/ato-tax-model
+./trainloop fetch --run ato --hf-repo you/ato-tax-model
 ```
+
+`./trainloop` is a small launcher for `uv run trainloop` that keeps working even when macOS
+hides the environment's files (see the note in `pyproject.toml`).
+
+Try a finished Tinker model against the original: `./trainloop chat --run ato --message "..."`.
 
 Other commands: `trainloop validate file.jsonl` checks any dataset; `trainloop catalog` lists what each
 trainer can fine-tune (live).

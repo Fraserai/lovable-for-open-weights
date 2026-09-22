@@ -379,7 +379,7 @@ def status(run: RunOpt, wait: Annotated[bool, typer.Option(help="Poll until the 
 @app.command()
 def fetch(
     run: RunOpt,
-    hf_repo: Annotated[Optional[str], typer.Option(help="Also push to this private Hugging Face repo")] = None,
+    hf_repo: Annotated[Optional[str], typer.Option(help="Also push to this private Hugging Face repo (\"auto\" = you/<run>)")] = None,
 ):
     """Download the trained adapter, and optionally push it to a private Hugging Face repo."""
     from .fireworks import Fireworks
@@ -406,6 +406,10 @@ def fetch(
             fw.close()
     typer.echo(f"Downloaded {len(files)} files to {dest}")
 
+    if hf_repo == "auto":
+        from huggingface_hub import HfApi
+
+        hf_repo = f"{HfApi(token=config.require('HF_TOKEN')).whoami()['name']}/{run}"
     if hf_repo:
         from .handback import push_to_hub
 
@@ -416,6 +420,31 @@ def fetch(
         state["hf_repo"] = url
         _save(run_dir, state)
         typer.secho(f"Pushed to {url} (private)", fg="green")
+
+
+@app.command()
+def chat(
+    run: RunOpt,
+    message: Annotated[str, typer.Option(help="What to ask")],
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable")] = False,
+):
+    """Ask the original model and your trained one the same question, side by side."""
+    from .playground import compare
+
+    run_dir = _run_dir(run)
+    _load(run_dir)
+    try:
+        answers = compare(run_dir, message)
+    except RuntimeError as e:
+        typer.secho(str(e), fg="red", err=True)
+        raise typer.Exit(1)
+    if as_json:
+        typer.echo(json.dumps(answers))
+        return
+    typer.secho("Original model:", bold=True)
+    typer.echo(answers["original"] + "\n")
+    typer.secho("Your trained model:", bold=True)
+    typer.echo(answers["trained"])
 
 
 @app.command()
@@ -452,3 +481,7 @@ def catalog(
             f"{fmt_ctx(e['train_context_tokens']):>8} {fmt_params(e['params']):>10}  "
             f"{e['trainer_model_id']}"
         )
+
+
+if __name__ == "__main__":
+    main()
