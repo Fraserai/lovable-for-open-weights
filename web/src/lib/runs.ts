@@ -11,8 +11,9 @@ const ROOT = path.resolve(process.cwd(), "..");
 const WORKER = path.join(ROOT, "worker");
 const RUNS = path.join(ROOT, "runs");
 
-// uv's editable install of the worker has broken before (it survived a folder move pointing at the
-// old path). Naming the source directory outright means a bad install record can't take the app down.
+// Belt and braces: after the project moved folders, macOS "hidden" flags stopped Python loading the
+// worker's editable install (fixed in worker/pyproject.toml). Naming the source directory outright
+// means a broken install record can't take the app down again.
 const WORKER_ENV = { PYTHONPATH: path.join(WORKER, "src"), NO_COLOR: "1" };
 
 // First pass keeps generator spend small; raise once the loop is proven.

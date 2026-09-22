@@ -21,6 +21,10 @@ tinker = ["tinker>=0.30", "tinker-cookbook>=0.5.7", "certifi"]
 
 [tool.uv]
 default-groups = ["dev", "tinker"]
+# Copy rather than clone from uv's cache: cloning carried a macOS "hidden" flag onto the
+# editable-install .pth after the project moved, and Python 3.12.14+ silently skips hidden .pth
+# files, so `trainloop` stopped importing.
+link-mode = "copy"
 
 [build-system]
 requires = ["hatchling"]
