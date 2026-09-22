@@ -63,3 +63,12 @@ def test_openai_uses_reasoning_effort_not_temperature():
         assert url == OPENAI_URL
         assert "provider" not in body and "temperature" not in body
         assert body["reasoning_effort"] == "low"
+
+
+def test_replies_that_mention_source_material_are_caught():
+    from trainloop.synth import leaks_source
+
+    assert leaks_source("The excerpt doesn't say whether you're covered.")
+    assert leaks_source("According to the document, fees are monthly.")
+    assert not leaks_source("Fees are deducted monthly. For anything else, contact the fund.")
+    assert not leaks_source("You can send documents to the fund by post.")

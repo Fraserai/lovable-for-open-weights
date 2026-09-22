@@ -21,8 +21,8 @@ type Entry = {
   sft_lora: boolean;
 };
 
-// Trainers the worker can run end to end today. Tinker joins once its train/fetch wiring lands.
-const WIRED: Trainer[] = ["Fireworks"];
+// Trainers the worker can run end to end today. Tinker verified live 2026-09-23 (Qwen3.5-4B).
+const WIRED: Trainer[] = ["Fireworks", "Tinker"];
 
 let refreshing: Promise<void> | null = null;
 
