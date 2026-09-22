@@ -16,6 +16,11 @@ trainloop = "trainloop.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
+# Trainer 2. Heavy (torch/transformers). Skip it with: uv sync --no-group tinker
+tinker = ["tinker>=0.30", "tinker-cookbook>=0.5.7", "certifi"]
+
+[tool.uv]
+default-groups = ["dev", "tinker"]
 
 [build-system]
 requires = ["hatchling"]
