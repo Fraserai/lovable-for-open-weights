@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { BRAND } from "@/lib/brand";
 import type { RunStatus, Stage, TrainPlan } from "@/lib/runs";
-import type { Brief } from "./Composer";
+import type { ModelOption } from "@/lib/models";
 import { formatBytes } from "./Composer";
 import { Check, Doc, Logo } from "./icons";
 
@@ -18,10 +18,20 @@ const STAGES = [
 
 const STAGE_LABEL: Record<Stage, string> = { waiting: "Waiting", running: "Working…", done: "Done", failed: "Stopped" };
 
-export default function Studio({ brief, onReset }: { brief: Brief; onReset: () => void }) {
+/** What the workspace shows. New runs carry real File objects to upload; reopened runs only names. */
+export type StudioBrief = { goal: string; files: { name: string; size: number }[]; model: ModelOption };
+
+type Turn = { q: string; original?: string; trained?: string; error?: string };
+
+export default function Studio({ brief, existingRunId, onReset }:
+  { brief: StudioBrief; existingRunId?: string; onReset: () => void }) {
   const { goal, files, model } = brief;
   const totalBytes = files.reduce((n, f) => n + f.size, 0);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(existingRunId ?? null);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [handbackError, setHandbackError] = useState<string | null>(null);
   const [run, setRun] = useState<RunStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -38,7 +48,9 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
       if (!alive || !res.ok) return;
       const next: RunStatus = await res.json();
       setRun(next);
-      if (next.status === "running" || next.train.state === "running") setTimeout(tick, 2000);
+      if (next.status === "running" || next.train.state === "running" || next.train.handback === "running") {
+        setTimeout(tick, 2000);
+      }
     };
     tick();
     return () => { alive = false; };
@@ -50,7 +62,7 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
     const form = new FormData();
     form.set("goal", goal);
     form.set("model", model.id);
-    files.forEach((f) => form.append("files", f));
+    files.forEach((f) => f instanceof File && form.append("files", f));
     try {
       const res = await fetch("/api/runs", { method: "POST", body: form });
       const body = await res.json();
@@ -94,10 +106,46 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
     }
   };
 
+  const ask = async () => {
+    const q = question.trim();
+    if (!q || asking) return;
+    setAsking(true);
+    setQuestion("");
+    setTurns((t) => [...t, { q }]);
+    const settle = (patch: Partial<Turn>) =>
+      setTurns((t) => t.map((turn, i) => (i === t.length - 1 ? { ...turn, ...patch } : turn)));
+    try {
+      const res = await fetch(`/api/runs/${runId}/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "The models didn't answer.");
+      settle({ original: body.original, trained: body.trained });
+    } catch (e) {
+      settle({ error: e instanceof Error ? e.message : "The models didn't answer." });
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const takeHome = async () => {
+    setHandbackError(null);
+    const res = await fetch(`/api/runs/${runId}/fetch`, { method: "POST" });
+    if (!res.ok) {
+      setHandbackError((await res.json().catch(() => ({}))).error ?? "Could not start.");
+      return;
+    }
+    setRun((r) => (r ? { ...r, train: { ...r.train, handback: "running" } } : r));
+    setTimeout(() => fetch(`/api/runs/${runId}`).then((r) => r.json()).then(setRun).catch(() => {}), 2000);
+  };
+
   const stageOf = (key: (typeof STAGES)[number]["key"]): Stage => {
     if (!run) return "waiting";
     if (key === "train") return run.train.state;
-    if (key === "handback") return run.train.hfRepo ? "done" : "waiting";
+    if (key === "handback") {
+      return run.train.hfRepo ? "done" : run.train.handback === "running" ? "running"
+        : run.train.handback === "failed" ? "failed" : "waiting";
+    }
     return run.stages[key];
   };
   const busy = starting || run?.status === "running";
@@ -138,8 +186,9 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
               ))}
             </ol>
             <p className="text-muted">
-              First I&apos;ll write a sample of training examples from up to 20 sections so you can check them.
-              Nothing gets trained or paid for on Fireworks until you say so. Your documents only go to providers that don&apos;t keep data.
+              First I&apos;ll prepare training examples (from up to 20 sections of your documents, or straight from
+              your dataset) so you can check them. Nothing gets trained or paid for on {model.trainer ?? "the trainer"} until
+              you say so.
             </p>
             {!runId && (
               <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -178,7 +227,7 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
           {run?.status === "done" && (
             <Assistant>
               <p>
-                I wrote <b>{run.rows?.toLocaleString()}</b> training examples (about {run.estTokens?.toLocaleString()} tokens)
+                {run.source === "dataset" ? "I loaded" : "I wrote"} <b>{run.rows?.toLocaleString()}</b> training examples (about {run.estTokens?.toLocaleString()} tokens)
                 {run.stages.check === "done" ? " and they all passed the checks." : ", but some failed the checks:"}
               </p>
               {run.stages.check !== "done" && (
@@ -263,15 +312,66 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
 
           {run?.train.state === "done" && (
             <Assistant>
-              <p><b>Your model is trained.</b> It learned from your documents and it&apos;s yours to keep.</p>
-              <p className="text-muted">
-                To download it, or push it to a private Hugging Face repo, run:{" "}
-                <code className="font-mono text-sm">trainloop fetch --run {run.id} --hf-repo you/name</code>
-              </p>
-              {run.train.hfRepo && (
-                <p>Published privately at <a href={run.train.hfRepo} target="_blank" rel="noreferrer" className="underline">{run.train.hfRepo}</a></p>
+              <p><b>Your model is trained.</b> It learned from what you gave it, and it&apos;s yours to keep.</p>
+              {run.train.hfRepo ? (
+                <p>
+                  It&apos;s in your private Hugging Face repo:{" "}
+                  <a href={run.train.hfRepo} target="_blank" rel="noreferrer" className="underline">{run.train.hfRepo.replace("https://huggingface.co/", "")}</a>
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={takeHome} disabled={run.train.handback === "running"}
+                          className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-ground transition hover:opacity-90 disabled:opacity-40">
+                    {run.train.handback === "running" ? "Publishing to your Hugging Face…" : "Take it home"}
+                  </button>
+                  <span className="text-sm text-faint">
+                    {run.train.handback === "failed" ? "That didn't finish. Try again; nothing gets retrained."
+                      : "Saves the model to a private repo on your Hugging Face account."}
+                  </span>
+                  {handbackError && <span className="text-sm text-red-600 dark:text-red-400">{handbackError}</span>}
+                </div>
               )}
             </Assistant>
+          )}
+
+          {run?.train.canChat && (
+            <section aria-label="Talk to your model" className="space-y-4 border-t border-line pt-6">
+              <div>
+                <h3 className="font-display text-xl font-bold tracking-tight">Talk to your model</h3>
+                <p className="text-sm text-muted">Ask anything. The original {model.name} and yours get the same question.</p>
+              </div>
+
+              {turns.map((t, i) => (
+                <div key={i} className="space-y-3">
+                  <p className="ml-auto w-fit max-w-[560px] rounded-3xl rounded-br-lg bg-ink px-5 py-3 text-ground">{t.q}</p>
+                  {t.error ? (
+                    <p className="text-sm text-red-600 dark:text-red-400">{t.error}</p>
+                  ) : (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {([["Original", t.original, false], ["Yours", t.trained, true]] as const).map(([label, text, mine]) => (
+                        <figure key={label} className={`rounded-2xl border p-4 text-sm ${mine ? "border-accent bg-surface" : "border-line"}`}>
+                          <figcaption className={`mb-2 text-xs font-medium tracking-wide uppercase ${mine ? "text-accent" : "text-faint"}`}>
+                            {label}
+                          </figcaption>
+                          {text === undefined
+                            ? <p className="flex items-center gap-2 text-faint"><span className="size-2 animate-pulse rounded-full bg-accent" /> Thinking…</p>
+                            : <p className="whitespace-pre-wrap leading-relaxed">{text || "(no answer)"}</p>}
+                        </figure>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <form onSubmit={(e) => { e.preventDefault(); ask(); }} className="flex gap-2">
+                <label htmlFor="ask" className="sr-only">Ask your model</label>
+                <input id="ask" value={question} onChange={(e) => setQuestion(e.target.value)} disabled={asking}
+                       placeholder={asking ? "Both models are answering (about 30 seconds)…" : "Ask your model something…"}
+                       className="min-w-0 flex-1 rounded-full border border-line bg-surface px-5 py-3 text-[15px] outline-none focus:border-accent disabled:opacity-60" />
+                <button type="submit" disabled={asking || !question.trim()}
+                        className="rounded-full bg-ink px-5 py-3 text-sm font-medium text-ground transition disabled:opacity-30">Ask</button>
+              </form>
+            </section>
           )}
         </section>
 
@@ -283,8 +383,11 @@ export default function Studio({ brief, onReset }: { brief: Brief; onReset: () =
           <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
             <div><dt className="text-faint">Base model</dt><dd className="mt-0.5 font-medium">{model.name}</dd></div>
             <div><dt className="text-faint">Trainer</dt><dd className="mt-0.5 font-medium">{model.trainer ?? "None yet"}</dd></div>
-            <div><dt className="text-faint">Method</dt><dd className="mt-0.5 font-medium">LoRA, rank 8</dd></div>
-            <div><dt className="text-faint">Passes over data</dt><dd className="mt-0.5 font-medium">1 epoch</dd></div>
+            <div><dt className="text-faint">Method</dt><dd className="mt-0.5 font-medium">LoRA, rank {run?.train.loraRank ?? plan?.lora_rank ?? 32}</dd></div>
+            <div>
+              <dt className="text-faint">Passes over data</dt>
+              <dd className="mt-0.5 font-medium">{run?.train.epochs ?? plan?.epochs ?? "sized to your data"}</dd>
+            </div>
           </dl>
 
           <ol className="mt-8" aria-label="Progress">
