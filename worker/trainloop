@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the worker CLI without relying on the editable install (see pyproject.toml).
+here="$(cd "$(dirname "$0")" && pwd)"
+PYTHONPATH="$here/src${PYTHONPATH:+:$PYTHONPATH}" exec uv run --no-sync --directory "$here" python -m trainloop.cli "$@"
