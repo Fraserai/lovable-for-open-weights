@@ -9,3 +9,4 @@ __pycache__/
 *.jsonl
 /runs/
 .pytest_cache/
+.DS_Store
