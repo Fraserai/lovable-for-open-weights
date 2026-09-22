@@ -39,6 +39,15 @@ def _save(run_dir: Path, state: dict) -> None:
 RunOpt = Annotated[str, typer.Option("--run", help="Run name, e.g. acme-member-faq")]
 
 
+def main() -> None:
+    """Entry point: a missing key is a setup step, not a crash, so print it plainly."""
+    try:
+        app()
+    except config.MissingConfig as e:
+        typer.secho(str(e), fg="red", err=True)
+        raise SystemExit(2)
+
+
 @app.command()
 def prepare(
     docs: Annotated[list[Path], typer.Argument(exists=True, help="Files or folders (PDF, DOCX, PPTX, HTML, MD, TXT)")],
