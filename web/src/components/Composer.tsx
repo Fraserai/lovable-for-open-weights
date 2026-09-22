@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ACCEPTED_FILES, DEFAULT_MODEL, MODELS, type ModelOption } from "@/lib/models";
-import { ArrowUp, Check, Chevron, Close, Doc, Mic, Plus } from "./icons";
+import { ACCEPTED_FILES, DEFAULT_MODEL, type ModelOption } from "@/lib/models";
+import { ArrowUp, Close, Doc, Mic, Plus } from "./icons";
+import ModelPicker from "./ModelPicker";
 
 export type Brief = { goal: string; files: File[]; model: ModelOption };
 
@@ -23,13 +24,11 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
   const [goal, setGoal] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [model, setModel] = useState<ModelOption>(DEFAULT_MODEL);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [ph, setPh] = useState(0);
   const text = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const picker = useRef<HTMLDivElement>(null);
 
   // Rotate the example placeholder while the box is empty
   useEffect(() => {
@@ -45,21 +44,6 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }, [goal]);
-
-  // Close the model picker on outside click / Escape
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (picker.current && !picker.current.contains(e.target as Node)) setPickerOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPickerOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [pickerOpen]);
 
   const addFiles = (list: FileList | null) => {
     if (!list) return;
@@ -136,36 +120,7 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
           </button>
 
           <div className="ml-auto flex items-center gap-1">
-            <div ref={picker} className="relative">
-              <button type="button" onClick={() => setPickerOpen((o) => !o)} aria-haspopup="listbox"
-                      aria-expanded={pickerOpen}
-                      className="flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-2 text-sm text-muted transition hover:bg-ground hover:text-ink">
-                <span className="font-medium text-ink">{model.name}</span>
-                <span className="hidden sm:inline">on {model.trainer}</span>
-                <Chevron className="size-4" />
-              </button>
-              {pickerOpen && (
-                <div role="listbox" aria-label="Base model"
-                     className="absolute right-0 bottom-full z-20 mb-2 w-[min(340px,calc(100vw-48px))] overflow-hidden rounded-2xl border border-line bg-surface p-1.5 shadow-[var(--shadow)]">
-                  <p className="px-3 pt-2 pb-1.5 text-xs font-medium tracking-wide text-faint uppercase">Base model</p>
-                  {MODELS.map((m) => (
-                    <button key={m.id} type="button" role="option" aria-selected={m.id === model.id}
-                            onClick={() => { setModel(m); setPickerOpen(false); }}
-                            className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-ground">
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          <span className="font-medium">{m.name}</span>
-                          <span className="rounded-md border border-line px-1.5 py-px text-[11px] text-muted">{m.trainer}</span>
-                          {!m.ready && <span className="text-[11px] text-faint">coming soon</span>}
-                        </span>
-                        <span className="block text-xs text-faint">{m.maker} · {m.note}</span>
-                      </span>
-                      {m.id === model.id && <Check className="mt-1 size-4 text-accent" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ModelPicker value={model} onChange={setModel} />
 
             <button type="button" aria-label="Voice input (coming soon)" title="Voice input is coming soon" disabled
                     className="grid size-9 place-items-center rounded-full text-faint disabled:cursor-not-allowed">
