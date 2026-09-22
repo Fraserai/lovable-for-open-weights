@@ -5,7 +5,7 @@ node_modules/
 .venv/
 __pycache__/
 .next/
-data/
+/data/
 *.jsonl
-runs/
+/runs/
 .pytest_cache/
