@@ -85,14 +85,19 @@ export async function startPrepare(id: string, goal: string, baseModel: string, 
   const state: WebState = { status: "running", exitCode: null, startedAt: new Date().toISOString() };
   await writeFile(path.join(dir, "web.json"), JSON.stringify(state));
 
+  // A ready-made dataset trains as-is; documents have to be read and turned into examples first.
+  const datasets = files.filter((f) => f.name.toLowerCase().endsWith(".jsonl"));
+  const isDataset = datasets.length === files.length;
+  const args = isDataset
+    ? ["dataset", "--run", id, "--goal", goal, "--base-model", baseModel,
+       "--file", path.join(uploads, safeFileName(datasets[0].name))]
+    : ["prepare", uploads, "--goal", goal, "--run", id, "--base-model", baseModel,
+       "--max-chunks", FIRST_PASS_CHUNKS];
+
   const log = createWriteStream(path.join(dir, "prepare.log"));
   // Args array, no shell: user text can't be interpreted as a command.
-  const child = spawn(
-    "uv",
-    ["run", "--directory", WORKER, "trainloop", "prepare", uploads, "--goal", goal, "--run", id,
-     "--base-model", baseModel, "--max-chunks", FIRST_PASS_CHUNKS],
-    { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } },
-  );
+  const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", ...args],
+    { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } });
   child.stdout.pipe(log);
   child.stderr.pipe(log);
   const finish = (code: number | null) => {
@@ -188,7 +193,8 @@ export async function getStatus(id: string): Promise<RunStatus | null> {
       return { user: msgs.find((m) => m.role === "user")?.content ?? "", assistant: msgs.find((m) => m.role === "assistant")?.content ?? "" };
     }), [] as { user: string; assistant: string }[]);
 
-  const parsed = lines.some((l) => l.includes(" chunks -> "));
+  const fromDataset = lines.some((l) => / rows from /.test(l));
+  const parsed = fromDataset || lines.some((l) => l.includes(" chunks -> "));
   const failed = web.status === "failed";
   const reportStart = lines.findIndex((l) => / rows valid, /.test(l));
   const report = reportStart >= 0 ? lines.slice(reportStart).filter((l) => /rows valid|ERROR|warn/.test(l)).slice(0, 12) : [];
