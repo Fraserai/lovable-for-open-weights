@@ -11,6 +11,7 @@ const PLACEHOLDERS = [
   "Train a model that answers member questions from our PDS…",
   "Teach GLM to draft complaint responses in our tone…",
   "Turn our policy manuals into an internal support assistant…",
+  "Train on this dataset so it answers like our compliance team…",
   "Make a model that explains our investment options in plain English…",
 ];
 
@@ -62,7 +63,7 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
   const send = () => {
     if (!canSend) return;
     if (files.length === 0) {
-      setHint("Add the documents you want the model to learn from. Use + or drop them here.");
+      setHint("Add what the model should learn from: documents, or a ready-made dataset (.jsonl). Use + or drop them here.");
       return;
     }
     onSubmit({ goal: goal.trim(), files, model });
@@ -113,8 +114,8 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
         <div className="flex items-center gap-2 px-3 pb-3">
           <input ref={fileInput} id="files" type="file" multiple accept={ACCEPTED_FILES} className="hidden"
                  onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-          <button type="button" onClick={() => fileInput.current?.click()} aria-label="Add documents"
-                  title="Add documents (PDF, Word, PowerPoint, HTML, Markdown, text, JSONL)"
+          <button type="button" onClick={() => fileInput.current?.click()} aria-label="Add documents or a dataset"
+                  title="Add documents (PDF, Word, PowerPoint, HTML, Markdown, text) or a dataset (.jsonl)"
                   className="grid size-9 place-items-center rounded-full border border-line text-muted transition hover:bg-ground hover:text-ink">
             <Plus className="size-5" />
           </button>

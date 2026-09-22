@@ -37,7 +37,7 @@ export default function Home() {
           Train a model that&apos;s yours
         </h1>
         <p className="mt-4 max-w-xl text-lg text-balance text-muted sm:text-xl">
-          Pick any open model, bring your content, and get back weights you own.
+          Pick any open model, bring your documents or a dataset, and get back weights you own.
         </p>
 
         <div className="mt-10 w-full max-w-[760px]">
