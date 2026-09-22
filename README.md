@@ -40,7 +40,9 @@ Never paste keys into chat or commit `.env`; it is git-ignored.
 
 - **Proof it improves models:** on Banking77 (77-way intent classification), Qwen3.5-4B went from
   67.5% to 82.5% exact-match accuracy on 200 held-out messages after training on 1,000 examples
-  (1 epoch, ~41c, ~11 min on Tinker). Reproduce: `worker/scripts/banking77_data.py`, then
+  (1 epoch, ~41c, ~11 min on Tinker). Scaled up: **Kimi-K2.6 (1T parameters) went from 76.0% to
+  92.0%** on the same 200 messages after 1,540 balanced examples (20 per intent, LR 2.5e-4,
+  1 epoch, ~$4.12, ~55 min). Reproduce: `worker/scripts/banking77_data.py [balanced 20]`, then
   `trainloop dataset/train`, then `worker/scripts/banking77_score.py <run>`.
 - **Tinker:** proven end to end with real runs (Qwen3.5-4B on a PDS and on 300 ATO decisions),
   published to a private Hugging Face repo.
