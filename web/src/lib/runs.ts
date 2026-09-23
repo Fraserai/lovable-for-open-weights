@@ -3,8 +3,9 @@ import "server-only";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { toWorker, type Settings } from "./settings";
 
 // The dev server runs from web/; the worker and runs/ folder sit beside it.
 const ROOT = path.resolve(process.cwd(), "..");
@@ -33,7 +34,11 @@ export type TrainPlan = {
   lora_rank: number;
   learning_rate: number | null;
   batch_size: number;
-  max_length?: number;
+  grad_accum: number;
+  lr_scheduler: string | null;
+  max_length?: number | null;
+  /** Settings the chosen trainer can't honour (worker settings.split) */
+  ignored: string[];
   est_cost: number | null;
   rate_per_million: number | null;
   // Unsloth: a rented GPU billed by the second; the job's time limit caps the bill at max_cost
@@ -60,8 +65,6 @@ export type TrainProgress = {
   elapsedSec: number | null;
 };
 
-/** What the Parameters card set. Absent = sized for the data by the worker. */
-export type RunSettings = { epochs: number | null; loraRank: number | null; learningRate: number | null };
 
 /** A dataset on the Hugging Face Hub, imported as-is (no generator). */
 export type HubSource = {
@@ -71,6 +74,8 @@ export type HubSource = {
 export type RunSummary = {
   id: string; goal: string | null; baseModel: string | null; rows: number | null;
   state: "preparing" | "ready" | "training" | "trained" | "failed"; updated: number;
+  /** Training was started (drafts that were only checked are not) */
+  started: boolean;
 };
 
 export type RunStatus = {
@@ -80,6 +85,8 @@ export type RunStatus = {
   source: "documents" | "dataset";
   /** The Hub dataset or file the examples came from, when imported as-is */
   sourceLabel: string | null;
+  /** How the examples were imported (dataset runs): Hub id, subset, split, row limit, column mapping */
+  sourceInfo: { hf: string | null; config: string | null; split: string | null; limit: number | null } | null;
   files: { name: string; size: number }[];
   status: "running" | "done" | "failed";
   stages: { read: Stage; write: Stage; check: Stage };
@@ -90,7 +97,7 @@ export type RunStatus = {
   systemPrompt: string | null;
   sample: { user: string; assistant: string }[];
   report: string[];
-  settings: RunSettings;
+  settings: Settings;
 };
 
 // goal/baseModel: known before the worker writes run.json, so a preparing run can be shown
@@ -174,13 +181,20 @@ export async function getPlan(id: string): Promise<TrainPlan> {
   return JSON.parse(await worker(["plan", "--run", id, "--json"]));
 }
 
-/** Sets the model and Parameters-card settings on a prepared run, then returns the new plan. Spends nothing.
- * 0 tells the worker "size it for me". */
-export async function configure(id: string, baseModel: string, s: RunSettings): Promise<TrainPlan> {
+/** Sets the model and the Parameters card's settings on a prepared run, then returns the new plan. Spends nothing. */
+export async function configure(id: string, baseModel: string, settings: Settings): Promise<TrainPlan> {
   runDir(id);
-  await worker(["configure", "--run", id, "--base-model", baseModel,
-    "--epochs", String(s.epochs ?? 0), "--lora-rank", String(s.loraRank ?? 0), "--learning-rate", String(s.learningRate ?? 0)]);
+  await worker(["configure", "--run", id, "--base-model", baseModel, "--json", JSON.stringify(toWorker(settings))]);
   return getPlan(id);
+}
+
+/** Removes a run that never started training (a dataset picked, then replaced). */
+export async function deleteDraft(id: string): Promise<boolean> {
+  const dir = runDir(id);
+  const run = await readOr<Record<string, unknown> | null>(path.join(dir, "run.json"), JSON.parse, null);
+  if (run?.job_state || run?.job) return false;
+  await rm(dir, { recursive: true, force: true });
+  return true;
 }
 
 /** Starts the paid training run in the background; progress is read back by getStatus. */
@@ -322,10 +336,15 @@ export async function getStatus(id: string): Promise<RunStatus | null> {
     sample,
     report,
     settings: {
-      epochs: typeof run?.train_epochs === "number" ? run.train_epochs : null,
-      loraRank: typeof run?.train_lora_rank === "number" ? run.train_lora_rank : null,
-      learningRate: typeof run?.learning_rate === "number" ? run.learning_rate : null,
+      // Saved before settings lived under "settings" (worker settings.load folds these in the same way)
+      ...(typeof run?.train_epochs === "number" ? { epochs: run.train_epochs } : {}),
+      ...(typeof run?.train_lora_rank === "number" ? { lora_rank: run.train_lora_rank } : {}),
+      ...(typeof run?.learning_rate === "number" ? { learning_rate: run.learning_rate } : {}),
+      ...((run?.settings ?? {}) as Settings),
     },
+    sourceInfo: run && typeof run.source === "object" && run.source
+      ? (({ hf, config, split, limit }) => ({ hf, config, split, limit }))(run.source as Record<string, never>)
+      : null,
   };
 }
 
@@ -343,7 +362,7 @@ export async function listRuns(): Promise<RunSummary[]> {
       job === "JOB_STATE_COMPLETED" ? "trained" : job === "JOB_STATE_FAILED" ? "failed" : job ? "training"
       : run ? "ready" : web?.status === "failed" ? "failed" : "preparing";
     return {
-      id, updated, state,
+      id, updated, state, started: !!job,
       goal: typeof run?.goal === "string" ? run.goal : web?.goal ?? null,
       baseModel: typeof run?.base_model === "string" ? run.base_model : web?.baseModel ?? null,
       rows: typeof run?.rows === "number" ? run.rows : null,

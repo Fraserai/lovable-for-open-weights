@@ -4,13 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import type { ModelOption } from "./models";
 import type { RunStatus, RunSummary } from "./runs";
 
-/** What the home prompt hands to the Train page. Held in memory: File objects can't go in a URL. */
-export type Draft = { goal: string; files: File[]; model: ModelOption };
-let draft: Draft | null = null;
-export const setDraft = (d: Draft) => { draft = d; };
-export const peekDraft = () => draft;
-export const clearDraft = () => { draft = null; };
-
 // Fetched once per page load; the server caches the trainer lists too.
 let modelsCache: Promise<ModelOption[]> | null = null;
 export const loadModels = () =>
@@ -85,3 +78,9 @@ export const shortModel = (id: string | null) => (id ?? "").replace(/^unsloth:/,
 
 export const trainerOf = (id: string | null) =>
   !id ? null : id.startsWith("accounts/") ? "Fireworks" : id.startsWith("unsloth:") ? "Unsloth" : "Tinker";
+
+export function formatBytes(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 ** 2).toFixed(1)} MB`;
+}

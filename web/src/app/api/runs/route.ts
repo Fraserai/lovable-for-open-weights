@@ -22,7 +22,9 @@ export async function POST(req: Request) {
   const field = (k: string) => String(form.get(k) ?? "").trim() || undefined;
 
   const model = await findTrainable(modelId);
-  if (!goal) return Response.json({ error: "Say what the model should do first." }, { status: 400 });
+  // Documents are turned into examples for a goal; a ready-made dataset only uses it as an optional system prompt
+  const documents = !hf && files.some((f) => !f.name.toLowerCase().endsWith(".jsonl"));
+  if (documents && !goal) return Response.json({ error: "Say what the model should learn from these documents." }, { status: 400 });
   if (!model) return Response.json({ error: "No connected trainer can fine-tune that model yet." }, { status: 400 });
   if (!model.ready) return Response.json({ error: `${model.name} on ${model.trainer} isn't connected yet.` }, { status: 400 });
 
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Uploads are over 200 MB in total. Start with fewer documents." }, { status: 413 });
   }
 
-  const id = newRunId(goal);
+  const id = newRunId(goal || hf.split("/").pop() || files[0]?.name.replace(/\.[^.]+$/, "") || "run");
   await startPrepare(id, goal, model.id, hub ? [] : files, hub);
   return Response.json({ id }, { status: 202 });
 }

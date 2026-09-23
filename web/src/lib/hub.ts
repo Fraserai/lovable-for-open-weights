@@ -8,11 +8,16 @@ const auth = (): HeadersInit => (process.env.HF_TOKEN ? { Authorization: `Bearer
 
 export type DatasetHit = { id: string; downloads: number };
 
-/** Hugging Face datasets matching `q`, most downloaded first. */
+/** Hugging Face datasets matching `q`, most downloaded first; with no query, what's trending for text generation. */
 export async function searchDatasets(q: string): Promise<DatasetHit[]> {
   const url = new URL("https://huggingface.co/api/datasets");
-  url.searchParams.set("search", q);
-  url.searchParams.set("sort", "downloads");
+  if (q) {
+    url.searchParams.set("search", q);
+    url.searchParams.set("sort", "downloads");
+  } else {
+    url.searchParams.set("filter", "task_categories:text-generation");
+    url.searchParams.set("sort", "trendingScore");
+  }
   url.searchParams.set("limit", "12");
   const res = await fetch(url, { headers: auth(), next: { revalidate: 3600 } });
   if (!res.ok) return [];

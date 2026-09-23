@@ -27,6 +27,8 @@ SCRIPT = Path(__file__).with_name("jobs") / "unsloth_sft.py"
 LORA_RANK = 32  # same as Tinker, so results compare
 BATCH_SIZE = 4
 LEARNING_RATE = 2e-4  # Unsloth's standard for LoRA with alpha = rank
+MAX_SEQ_LENGTH = 32768  # the job script refuses (never cuts) examples longer than this
+TARGET_MODULES = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
 TARGET_TOTAL_STEPS = 250
 MAX_EPOCHS = 4
 
@@ -61,9 +63,9 @@ def _gb(text: str | None) -> float:
         return 0.0
 
 
-def pick_gpu(params: int, hardware: list) -> dict:
-    """The cheapest single bf16 GPU that holds the model for 16-bit LoRA training."""
-    weights_gb = params * 2 / 1e9
+def pick_gpu(params: int, hardware: list, bytes_per_param: float = 2) -> dict:
+    """The cheapest single bf16 GPU that holds the model for LoRA training (16-bit, or 4-bit for QLoRA)."""
+    weights_gb = params * bytes_per_param / 1e9
     need = weights_gb * WEIGHT_OVERHEAD + ACTIVATION_GB
     fits = [h for h in hardware
             if h.accelerator and h.accelerator.model in GPU_MODELS and str(h.accelerator.quantity) == "1"
@@ -91,10 +93,13 @@ def time_limit_hours(tokens: int) -> float:
 
 
 def plan(train_jsonl: Path, work_dir: Path, base_model: str, est_tokens: int, token: str,
-         learning_rate: float | None = None, epochs: int | None = None, lora_rank: int | None = None) -> dict:
-    """Everything decided before any money is spent: GPU, settings, and the most it can cost."""
+         s: dict | None = None) -> dict:
+    """Everything decided before any money is spent: GPU, settings, and the most it can cost.
+
+    `s` holds the Train page's settings (all of them apply here: we run the training script)."""
     from huggingface_hub import HfApi
 
+    s = s or {}
     api = HfApi(token=token)
     repo = hf_id(base_model)
     try:
@@ -104,22 +109,42 @@ def plan(train_jsonl: Path, work_dir: Path, base_model: str, est_tokens: int, to
     params = info.safetensors.total if info.safetensors else None
     if not params:
         raise UnslothError(f"{repo} doesn't publish its size (no safetensors), so no GPU can be sized for it.")
-    gpu = pick_gpu(params, api.list_jobs_hardware())
+    qlora = s.get("method") == "qlora"
+    gpu = pick_gpu(params, api.list_jobs_hardware(), 0.6 if qlora else 2)
 
     inputs = work_dir / "input"
     inputs.mkdir(parents=True, exist_ok=True)
     examples = expand_per_assistant_turn(train_jsonl, inputs / "train.jsonl")
-    epochs = epochs or resolve_epochs(examples)
-    hours = time_limit_hours(est_tokens * epochs)
+    batch, accum = s.get("batch_size") or BATCH_SIZE, s.get("grad_accum") or 1
+    per_epoch = math.ceil(examples / (batch * accum))
+    max_steps = s.get("max_steps")
+    epochs = math.ceil(max_steps / per_epoch) if max_steps else s.get("epochs") or resolve_epochs(examples, batch * accum)
+    steps = min(per_epoch * epochs, max_steps or per_epoch * epochs)
+    hours = time_limit_hours(round(est_tokens * steps / per_epoch))
+    rank = s.get("lora_rank") or LORA_RANK
     return {
         **gpu,
         "params": params,
         "examples": examples,
-        "batch_size": BATCH_SIZE,
+        "batch_size": batch,
+        "grad_accum": accum,
         "epochs": epochs,
-        "steps": math.ceil(examples / BATCH_SIZE) * epochs,
-        "learning_rate": learning_rate or LEARNING_RATE,
-        "lora_rank": lora_rank or LORA_RANK,
+        "steps": steps,
+        "max_steps": max_steps,
+        "learning_rate": s.get("learning_rate") or LEARNING_RATE,
+        "lora_rank": rank,
+        "lora_alpha": s.get("lora_alpha") or rank,
+        "lora_dropout": s.get("lora_dropout", 0.0),
+        "target_modules": s.get("target_modules") or list(TARGET_MODULES),
+        "lora_variant": s.get("lora_variant") or "lora",
+        "method": "qlora" if qlora else "lora",
+        "max_seq_length": s.get("context_length") or MAX_SEQ_LENGTH,
+        "optimizer": s.get("optimizer") or "adamw_8bit",
+        "lr_scheduler": s.get("lr_scheduler") or "linear",
+        "weight_decay": s.get("weight_decay", 0.0),
+        "warmup_steps": s.get("warmup_steps"),
+        "seed": s.get("seed", 3407),
+        "gradient_checkpointing": s.get("gradient_checkpointing") or "unsloth",
         "time_limit_hours": hours,
         "max_cost": round(hours * gpu["per_hour"], 2),
     }
@@ -136,6 +161,20 @@ def launch(work_dir: Path, base_model: str, p: dict, output_repo: str, token: st
     args = ["--data", "/input/train.jsonl", "--base-model", hf_id(base_model), "--output-repo", output_repo,
             "--epochs", str(p["epochs"]), "--learning-rate", str(p["learning_rate"]),
             "--lora-rank", str(p["lora_rank"]), "--batch-size", str(p["batch_size"])]
+    # Settings from the Train page; older plans without them keep the script's defaults
+    for key, flag in (("max_steps", "--max-steps"), ("grad_accum", "--grad-accum"), ("lora_alpha", "--lora-alpha"),
+                      ("lora_dropout", "--lora-dropout"), ("max_seq_length", "--max-seq-length"),
+                      ("optimizer", "--optim"), ("lr_scheduler", "--lr-scheduler"), ("weight_decay", "--weight-decay"),
+                      ("warmup_steps", "--warmup-steps"), ("seed", "--seed"),
+                      ("gradient_checkpointing", "--gradient-checkpointing")):
+        if p.get(key) is not None:
+            args += [flag, str(p[key])]
+    if p.get("target_modules"):
+        args += ["--target-modules", ",".join(p["target_modules"])]
+    if p.get("lora_variant") == "rslora":
+        args.append("--rslora")
+    if p.get("method") == "qlora":
+        args.append("--load-in-4bit")
     if held_out:
         shutil.copyfile(held_out, inputs / "held_out.jsonl")
         args += ["--eval", "/input/held_out.jsonl"]

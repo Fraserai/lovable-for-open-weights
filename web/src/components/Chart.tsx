@@ -49,9 +49,9 @@ export default function Chart({ title, points, smooth = false, format = fmt, emp
   const last = line.at(-1);
 
   return (
-    <figure className="rounded-3xl border border-line bg-surface p-5">
+    <figure className="rounded-[32px] bg-surface p-6 sm:p-8">
       <figcaption className="flex items-baseline justify-between gap-3">
-        <span className="font-display font-bold tracking-tight">{title}{smooth && <span className="ml-2 text-xs font-normal text-faint">smoothed</span>}</span>
+        <span className="text-[17px]">{title}{smooth && <span className="ml-2 text-xs font-normal text-faint">smoothed</span>}</span>
         <span className="font-mono text-sm text-muted tabular-nums">
           {h ? <>step {h.x} · {format(h.y)}</> : last ? format(last.y) : ""}
         </span>
