@@ -22,7 +22,7 @@ const FIRST_PASS_CHUNKS = "20";
 export type Stage = "waiting" | "running" | "done" | "failed";
 
 export type TrainPlan = {
-  trainer: "fireworks" | "tinker";
+  trainer: "fireworks" | "tinker" | "unsloth";
   base_model: string;
   examples: number;
   epochs: number;
@@ -31,6 +31,10 @@ export type TrainPlan = {
   lora_rank: number;
   est_cost: number | null;
   rate_per_million: number | null;
+  // Unsloth: a rented GPU billed by the second; the job's time limit caps the bill at max_cost
+  gpu?: string;
+  per_hour?: number;
+  max_cost?: number;
   ok: boolean;
   report: string[];
 };
@@ -45,6 +49,7 @@ export type TrainProgress = {
   canChat: boolean;
   epochs: number | null;
   loraRank: number | null;
+  jobUrl: string | null;
 };
 
 export type RunStatus = {
@@ -155,8 +160,10 @@ export async function startTraining(id: string): Promise<void> {
 
 async function trainProgress(dir: string, run: Record<string, unknown> | null): Promise<TrainProgress> {
   const jobState = typeof run?.job_state === "string" ? run.job_state : null;
-  const plan = (run?.tinker_plan ?? {}) as { steps?: number; epochs?: number; lora_rank?: number };
-  const metrics = await readOr(path.join(dir, "tinker", "logs", "metrics.jsonl"), (s) => s, "");
+  const unsloth = run?.job === "unsloth";
+  const plan = ((unsloth ? run?.unsloth_plan : run?.tinker_plan) ?? {}) as { steps?: number; epochs?: number; lora_rank?: number };
+  const metricsFile = unsloth ? path.join(dir, "unsloth", "metrics.jsonl") : path.join(dir, "tinker", "logs", "metrics.jsonl");
+  const metrics = await readOr(metricsFile, (s) => s, "");
   const steps = metrics.split("\n").filter(Boolean).length;
   const state: TrainProgress["state"] =
     jobState === "JOB_STATE_COMPLETED" ? "done"
@@ -175,6 +182,7 @@ async function trainProgress(dir: string, run: Record<string, unknown> | null): 
     canChat: state === "done" && run?.job === "tinker",
     epochs: typeof run?.epochs === "number" ? run.epochs : (plan as { epochs?: number }).epochs ?? null,
     loraRank: typeof run?.lora_rank === "number" ? run.lora_rank : (plan as { lora_rank?: number }).lora_rank ?? null,
+    jobUrl: typeof run?.job_url === "string" ? run.job_url : null,
   };
 }
 

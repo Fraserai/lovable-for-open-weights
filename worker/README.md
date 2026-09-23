@@ -1,7 +1,7 @@
 # worker
 
-The `trainloop` command: documents or a dataset + a goal → training data → fine-tune on Fireworks or
-Tinker → model back (download or private Hugging Face repo). The web app calls these same commands.
+The `trainloop` command: documents or a dataset + a goal → training data → fine-tune on Fireworks,
+Tinker or Unsloth (on Hugging Face GPUs) → model back (download or private Hugging Face repo). The web app calls these same commands.
 
 ## Setup
 
@@ -11,8 +11,8 @@ uv sync                      # includes the Tinker SDK (large: torch). Skip it: 
 ```
 
 Keys by step: `OPENROUTER_API_KEY` (or `OPENAI_API_KEY` with `GENERATOR_PROVIDER=openai`, test docs only)
-to write examples; `TINKER_API_KEY` or `FIREWORKS_API_KEY` + `FIREWORKS_ACCOUNT_ID` to train;
-`HF_TOKEN` (write) to publish.
+to write examples; `TINKER_API_KEY` or `FIREWORKS_API_KEY` + `FIREWORKS_ACCOUNT_ID` to train, or `HF_TOKEN` (write, with
+prepaid Jobs credit on the account) for Unsloth; `HF_TOKEN` (write) to publish.
 
 ## Use
 
@@ -51,7 +51,13 @@ re-run or resumed.
 ## Which trainer
 
 The base model decides: `accounts/fireworks/models/...` trains on Fireworks, a Hugging Face id
-(`Qwen/Qwen3.5-4B`) trains on Tinker. Settings are chosen for you: LoRA rank 32, epochs sized to the
+(`Qwen/Qwen3.5-4B`) trains on Tinker, and `unsloth:<Hugging Face id>` trains with Unsloth on a GPU
+rented from Hugging Face Jobs. Unsloth takes almost any open model on the Hub: the plan picks the
+cheapest single GPU that fits it in 16-bit, sets a time limit that caps the bill, and refuses models
+that need more than one GPU (not wired yet). The job runs in the cloud, so it survives this process
+stopping (`trainloop status` reattaches), and it pushes the adapter to a private repo on your account.
+Pass `--held-out file.jsonl` to `train` to score the original and trained model on examples kept out
+of training. Uses Unsloth's Apache-2.0 library only; Unsloth Studio is AGPL and is not used. Settings are chosen for you: LoRA rank 32, epochs sized to the
 dataset, and on Tinker its calibrated learning rate and the model's own chat format (unverified
 formats are refused before anything is charged).
 

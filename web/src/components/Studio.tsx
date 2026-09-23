@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BRAND } from "@/lib/brand";
 import type { RunStatus, Stage, TrainPlan } from "@/lib/runs";
 import type { ModelOption } from "@/lib/models";
@@ -38,6 +38,10 @@ export default function Studio({ brief, existingRunId, onReset }:
   const [plan, setPlan] = useState<TrainPlan | null>(null);
   const [planning, setPlanning] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
+  // Bumped when training or handback starts, to (re)start polling
+  const [pollKey, setPollKey] = useState(0);
+  // When Start was pressed: the trainer takes a few seconds to report in, so keep showing it as started
+  const launchedAt = useRef(0);
 
   // Poll the run while the worker is busy
   useEffect(() => {
@@ -46,15 +50,17 @@ export default function Studio({ brief, existingRunId, onReset }:
     const tick = async () => {
       const res = await fetch(`/api/runs/${runId}`, { cache: "no-store" });
       if (!alive || !res.ok) return;
-      const next: RunStatus = await res.json();
+      let next: RunStatus = await res.json();
+      const launching = next.train.state === "waiting" && Date.now() - launchedAt.current < 120_000;
+      if (launching) next = { ...next, train: { ...next.train, state: "running" } };
       setRun(next);
-      if (next.status === "running" || next.train.state === "running" || next.train.handback === "running") {
+      if (launching || next.status === "running" || next.train.state === "running" || next.train.handback === "running") {
         setTimeout(tick, 2000);
       }
     };
     tick();
     return () => { alive = false; };
-  }, [runId]);
+  }, [runId, pollKey]);
 
   const start = async () => {
     setStarting(true);
@@ -97,8 +103,9 @@ export default function Studio({ brief, existingRunId, onReset }:
       const res = await fetch(`/api/runs/${runId}/train`, { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not start training.");
-      setRun((r) => (r ? { ...r, train: { ...r.train, state: "running" } } : r));
-      setTimeout(() => fetch(`/api/runs/${runId}`).then((r) => r.json()).then(setRun).catch(() => {}), 2000);
+      launchedAt.current = Date.now();
+      setRun((r) => (r ? { ...r, train: { ...r.train, state: "running", error: null } } : r));
+      setPollKey((k) => k + 1);
     } catch (e) {
       setStartError(e instanceof Error ? e.message : "Could not start training.");
     } finally {
@@ -136,7 +143,7 @@ export default function Studio({ brief, existingRunId, onReset }:
       return;
     }
     setRun((r) => (r ? { ...r, train: { ...r.train, handback: "running" } } : r));
-    setTimeout(() => fetch(`/api/runs/${runId}`).then((r) => r.json()).then(setRun).catch(() => {}), 2000);
+    setPollKey((k) => k + 1);
   };
 
   const stageOf = (key: (typeof STAGES)[number]["key"]): Stage => {
@@ -272,9 +279,10 @@ export default function Studio({ brief, existingRunId, onReset }:
                 <div><dt className="text-faint">Passes over data</dt><dd className="mt-0.5 font-medium">{plan.epochs}</dd></div>
                 <div><dt className="text-faint">Training steps</dt><dd className="mt-0.5 font-medium">{plan.steps.toLocaleString()}</dd></div>
                 <div>
-                  <dt className="text-faint">Estimated cost</dt>
+                  <dt className="text-faint">{plan.max_cost != null ? "Most it can cost" : "Estimated cost"}</dt>
                   <dd className="mt-0.5 font-medium">
-                    {plan.est_cost === null ? "shown by the trainer"
+                    {plan.max_cost != null ? `$${plan.max_cost.toFixed(2)}`
+                      : plan.est_cost === null ? "shown by the trainer"
                       : plan.est_cost < 0.01 ? "under 1¢" : `$${plan.est_cost.toFixed(2)}`}
                   </dd>
                 </div>
@@ -288,7 +296,12 @@ export default function Studio({ brief, existingRunId, onReset }:
                         className="rounded-full border border-line px-4 py-2 text-sm transition hover:bg-surface">Not yet</button>
                 {startError && <span className="text-sm text-red-600 dark:text-red-400">{startError}</span>}
               </div>
-              <p className="text-sm text-faint">This is the only step that costs money. {plan.trainer === "tinker" ? "Tinker" : "Fireworks"} charges for the training tokens above.</p>
+              <p className="text-sm text-faint">
+                This is the only step that costs money.{" "}
+                {plan.trainer === "unsloth"
+                  ? `It trains with Unsloth on one ${plan.gpu} GPU from your Hugging Face account, at $${plan.per_hour}/hr billed by the second. A time limit stops it at $${plan.max_cost?.toFixed(2)}.`
+                  : `${plan.trainer === "tinker" ? "Tinker" : "Fireworks"} charges for the training tokens above.`}
+              </p>
             </Assistant>
           )}
 
@@ -296,8 +309,16 @@ export default function Studio({ brief, existingRunId, onReset }:
             <Assistant>
               <p className="flex items-center gap-2 text-muted">
                 <span className="size-2 animate-pulse rounded-full bg-accent" />
-                Training your model{run.train.totalSteps ? `: step ${run.train.steps} of ${run.train.totalSteps}` : "…"}
+                {run.train.jobUrl && run.train.steps === 0
+                  ? "Starting a cloud GPU and loading your model (a few minutes)…"
+                  : `Training your model${run.train.totalSteps ? `: step ${run.train.steps} of ${run.train.totalSteps}` : "…"}`}
               </p>
+              {run.train.jobUrl && (
+                <p className="text-sm text-faint">
+                  It runs in the cloud, so closing this page won&apos;t stop it.{" "}
+                  <a href={run.train.jobUrl} target="_blank" rel="noreferrer" className="underline">See the job on Hugging Face</a>
+                </p>
+              )}
             </Assistant>
           )}
 
@@ -307,6 +328,13 @@ export default function Studio({ brief, existingRunId, onReset }:
               <p className="rounded-xl border border-red-300/60 bg-red-50 px-4 py-3 font-mono text-sm text-red-800 dark:border-red-400/30 dark:bg-red-950/40 dark:text-red-200">
                 {run.train.error ?? "See train.log in the run folder."}
               </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" onClick={startTraining} disabled={starting}
+                        className="rounded-full border border-line px-4 py-2 text-sm transition hover:bg-surface disabled:opacity-40">
+                  {starting ? "Starting…" : "Try again"}
+                </button>
+                {startError && <span className="text-sm text-red-600 dark:text-red-400">{startError}</span>}
+              </div>
             </Assistant>
           )}
 

@@ -20,7 +20,8 @@ export default function RunView({ id }: { id: string }) {
       const base = run.baseModel ?? "";
       const trainable: ModelOption[] = await fetch("/api/models").then((r) => r.json()).then((d) => d.trainable).catch(() => []);
       const model = trainable.find((m) => m.id === base) ?? {
-        id: base, name: base.split("/").pop() || "Your model", trainer: base.startsWith("accounts/") ? "Fireworks" : "Tinker",
+        id: base, name: base.split("/").pop() || "Your model",
+        trainer: base.startsWith("accounts/") ? "Fireworks" : base.startsWith("unsloth:") ? "Unsloth" : "Tinker",
         hfRepo: null, note: "", ready: true,
       };
       setBrief({ goal: run.goal ?? "", files: run.files, model });
