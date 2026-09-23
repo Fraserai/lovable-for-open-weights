@@ -1,20 +1,6 @@
 type P = { className?: string };
 const base = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
-export const Plus = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden><path d="M12 5v14M5 12h14" /></svg>
-);
-export const Mic = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden>
-    <rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-  </svg>
-);
-export const ArrowUp = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={2.2} aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-);
-export const ArrowRight = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-);
 export const Chevron = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden><path d="m6 9 6 6 6-6" /></svg>
 );
@@ -29,24 +15,9 @@ export const Doc = ({ className }: P) => (
 export const Check = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={2.2} aria-hidden><path d="m5 12 5 5 9-10" /></svg>
 );
-export const Spark = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden>
-    <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6" />
-  </svg>
-);
-export const Flask = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden>
-    <path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3" /><path d="M7.5 15h9" />
-  </svg>
-);
 export const Chat = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden>
     <path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z" />
-  </svg>
-);
-export const Layers = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden>
-    <path d="m12 3 9 5-9 5-9-5 9-5z" /><path d="m3 13 9 5 9-5" />
   </svg>
 );
 export const Database = ({ className }: P) => (
@@ -89,11 +60,39 @@ export const Eye = ({ className }: P) => (
     <path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z" /><circle cx="12" cy="12" r="2.8" />
   </svg>
 );
-export const Menu = ({ className }: P) => (
-  <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-);
 export const External = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+);
+
+export const Info = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={1.6} aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.01" /></svg>
+);
+export const Brain = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={1.6} aria-hidden>
+    <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3 3 3 0 0 0 3-3V7a3 3 0 0 0-3-3z" />
+    <path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3 3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z" />
+    <path d="M9 9h1.5M13.5 9H15M8 14h2M14 14h2" />
+  </svg>
+);
+export const Chip = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={1.6} aria-hidden>
+    <rect x="7" y="7" width="10" height="10" rx="2" /><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4" />
+  </svg>
+);
+export const CloudUp = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={1.6} aria-hidden>
+    <path d="M7 18a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 8a4 4 0 0 1-.5 10" /><path d="M12 13v7M9 15.5 12 13l3 2.5" />
+  </svg>
+);
+export const Server = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={1.6} aria-hidden>
+    <rect x="4" y="4" width="16" height="7" rx="2" /><rect x="4" y="13" width="16" height="7" rx="2" /><path d="M8 7.5h.01M8 16.5h.01" />
+  </svg>
+);
+export const Hug = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={1.6} aria-hidden>
+    <circle cx="12" cy="12" r="8.5" /><path d="M9 10v.01M15 10v.01M8.5 14c1 1.5 2.2 2.2 3.5 2.2s2.5-.7 3.5-2.2" />
+  </svg>
 );
 
 // The mark: three stacked plates (weights / model layers)

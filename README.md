@@ -52,13 +52,12 @@ Never paste keys into chat or commit `.env`; it is git-ignored.
   First run queued: `banking77-unsloth` (Qwen3.5-4B, at most $1.00) against Tinker's 82.5%.
 - **Fireworks:** key, account and a real dataset upload verified live (GLM-5.3-Flash is
   supervised-LoRA tunable on the account). Training not yet run: the account has no credit.
-- **App (redesigned 2026-09-24, laid out like Unsloth Studio's Train screen, in our own style):** a sidebar
-  (New model, Train, Chat, Models, recent runs, which trainers have keys). Home asks "What should your model
-  do?" and hands the goal, files and model to **Train**, which has three tabs: **Configure** (Goal, Model +
-  trainer + method, Dataset from uploads or a Hugging Face dataset with split/column mapping and preview,
-  Parameters simple/advanced, Save/Load YAML, and a Run preview rail with steps, settings, where it trains and
-  the cost, re-planned live as settings change), **Current run** (progress, loss and learning-rate charts,
-  then side-by-side chat and publish to Hugging Face) and **History**. **Models** lists every tunable model
-  with the trainers that can run it.
+- **App (2026-09-24):** one page, the **Train** screen, laid out like Unsloth Studio's but running on our
+  cloud trainers. Tabs: **Configure** (Model card: any model, method, trainer; Dataset card: any Hugging Face
+  dataset or an upload, subset/split, column mapping, preview; Parameters: Simple/Advanced with every
+  Unsloth control, greyed with "Not supported on <trainer>" where a trainer can't honour it; Save/Load YAML;
+  a Run preview rail with steps, batch, context, LR, trainer, where it runs and the cost, re-planned live),
+  **Current Run** (progress, loss and LR charts, publish to Hugging Face) and **History**. Which trainer takes
+  which setting lives in `worker/src/trainloop/settings.py` (mirrored in `web/src/lib/settings.ts`).
 - **Not production-ready:** no login, and training runs as a process of the dev server, so stopping
   the server stops training. Needs a real job runner (see CLAUDE.md) before customers.

@@ -3,7 +3,7 @@ import { datasetInfo, searchDatasets } from "@/lib/hub";
 
 export const runtime = "nodejs";
 
-// GET /api/datasets?q=legal                 -> matching Hugging Face datasets
+// GET /api/datasets?q=legal                 -> matching Hugging Face datasets (no q: trending ones)
 // GET /api/datasets?id=owner/name[&config&split] -> subsets, splits, columns and first rows
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
@@ -16,5 +16,5 @@ export async function GET(req: NextRequest) {
     }
   }
   const q = p.get("q")?.trim() ?? "";
-  return Response.json(q.length >= 2 ? await searchDatasets(q).catch(() => []) : []);
+  return Response.json(q.length === 1 ? [] : await searchDatasets(q).catch(() => []));
 }

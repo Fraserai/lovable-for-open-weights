@@ -1,37 +1,31 @@
 "use client";
 
-import { Chevron } from "./icons";
+import { Chevron, Info } from "./icons";
 
-// Shared building blocks for the app pages. Our own look (light-first, teal accent, display type),
-// laid out the way Unsloth Studio's Train page is: one card per decision.
+// Building blocks for the Train page, styled after Unsloth Studio: dark rounded cards, pill fields,
+// uppercase field labels with an info mark, sliders with a value box.
 
 export const btn = {
-  primary: "inline-flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-ground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35",
-  accent: "inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35 dark:text-ground",
-  ghost: "inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-surface px-3.5 py-2 text-sm transition hover:bg-ground disabled:cursor-not-allowed disabled:opacity-40",
-  quiet: "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-muted transition hover:bg-ground hover:text-ink",
+  primary: "inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-3 text-[15px] font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35",
+  ghost: "inline-flex items-center justify-center gap-2 rounded-full bg-field px-4 py-2.5 text-sm transition hover:bg-[#383838] disabled:cursor-not-allowed disabled:opacity-40",
+  quiet: "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-ink transition hover:bg-field",
 };
 
 export const input =
-  "w-full rounded-xl border border-line bg-ground px-3.5 py-2.5 text-sm outline-none transition placeholder:text-faint focus:border-accent disabled:opacity-60";
+  "h-12 w-full rounded-2xl bg-field px-4 text-[15px] outline-none transition placeholder:text-faint focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50";
 
-export function Card({ icon, title, subtitle, action, children, step }: {
-  icon: React.ReactNode; title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; step?: number;
+export function Card({ icon, tone = "#22c08f", title, subtitle, action, children }: {
+  icon: React.ReactNode; tone?: string; title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <section className="@container rounded-3xl border border-line bg-surface p-5 sm:p-6" aria-label={title}>
-      <header className="mb-5 flex flex-wrap items-start gap-3">
-        <span className="relative grid size-10 shrink-0 place-items-center rounded-2xl bg-accent/10 text-accent">
+    <section className="@container rounded-[32px] bg-surface p-6 sm:p-8" aria-label={title}>
+      <header className="mb-7 flex flex-wrap items-center gap-4">
+        <span className="grid size-12 shrink-0 place-items-center rounded-full" style={{ background: `color-mix(in srgb, ${tone} 16%, transparent)`, color: tone }}>
           {icon}
-          {step !== undefined && (
-            <span className="absolute -top-1.5 -right-1.5 grid size-5 place-items-center rounded-full border-2 border-surface bg-ink font-mono text-[10px] text-ground">
-              {step}
-            </span>
-          )}
         </span>
-        <div className="min-w-[14rem] flex-1">
-          <h2 className="font-display text-lg leading-tight font-bold tracking-tight">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
+        <div className="min-w-[12rem] flex-1">
+          <h2 className="text-[17px] leading-tight">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-[15px] text-muted">{subtitle}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </header>
@@ -40,46 +34,45 @@ export function Card({ icon, title, subtitle, action, children, step }: {
   );
 }
 
-export function Field({ label, hint, htmlFor, children, aside }: {
-  label: string; hint?: string; htmlFor?: string; children: React.ReactNode; aside?: React.ReactNode;
+/** Field label. `upper` for the Model/Dataset cards' style (MODEL ⓘ), Title Case elsewhere (Subset ⓘ). */
+export function Label({ children, hint, htmlFor, upper, aside, note }: {
+  children: React.ReactNode; hint?: string; htmlFor?: string; upper?: boolean; aside?: React.ReactNode; note?: string;
 }) {
   return (
-    <div className="min-w-0">
-      <div className="mb-1.5 flex items-center gap-1.5">
-        <label htmlFor={htmlFor} className="text-xs font-medium tracking-wide text-muted uppercase">{label}</label>
-        {hint && (
-          <span title={hint} aria-label={hint} className="grid size-4 cursor-help place-items-center rounded-full border border-line text-[10px] text-faint">?</span>
-        )}
-        {aside && <span className="ml-auto">{aside}</span>}
-      </div>
-      {children}
+    <div className="mb-2.5 flex items-center gap-2">
+      <label htmlFor={htmlFor} className={upper ? "text-[13px] tracking-[0.08em] text-muted uppercase" : "text-[15px] text-muted"}>{children}</label>
+      {note && <span className="text-xs text-faint">{note}</span>}
+      {hint && <span title={hint} aria-label={hint} className="cursor-help text-faint"><Info className="size-4" /></span>}
+      {aside && <span className="ml-auto">{aside}</span>}
     </div>
   );
 }
 
-export function Select<T extends string>({ id, value, onChange, options, disabled }: {
-  id?: string; value: T; onChange: (v: T) => void; options: { value: T; label: string; disabled?: boolean }[]; disabled?: boolean;
+export function Select<T extends string>({ id, value, onChange, options, disabled, lead }: {
+  id?: string; value: T; onChange: (v: T) => void; options: { value: T; label: string; disabled?: boolean }[];
+  disabled?: boolean; lead?: React.ReactNode;
 }) {
   return (
     <div className="relative">
+      {lead && <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2">{lead}</span>}
       <select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as T)}
-              className={`${input} appearance-none pr-9`}>
+              className={`${input} appearance-none pr-11 ${lead ? "pl-10" : ""}`}>
         {options.map((o) => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}
       </select>
-      <Chevron className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-faint" />
+      <Chevron className="pointer-events-none absolute top-1/2 right-4 size-5 -translate-y-1/2 text-muted" />
     </div>
   );
 }
 
-export function Segmented<T extends string | number>({ value, onChange, options, label }: {
-  value: T; onChange: (v: T) => void; options: { value: T; label: string; disabled?: boolean; title?: string }[]; label: string;
+/** Pill tabs: Simple / Advanced, Optimization / Schedule / Memory. */
+export function Tabs<T extends string>({ value, onChange, options, label, wide }: {
+  value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string; wide?: boolean;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap gap-1 rounded-xl border border-line bg-ground p-1">
+    <div role="tablist" aria-label={label} className={`inline-flex rounded-full bg-field p-1 ${wide ? "w-full max-w-[560px]" : ""}`}>
       {options.map((o) => (
-        <button key={String(o.value)} type="button" role="radio" aria-checked={o.value === value} disabled={o.disabled}
-                title={o.title} onClick={() => onChange(o.value)}
-                className="rounded-lg px-3 py-1.5 text-sm text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 aria-checked:bg-surface aria-checked:font-medium aria-checked:text-ink aria-checked:shadow-sm">
+        <button key={o.value} type="button" role="tab" aria-selected={o.value === value} onClick={() => onChange(o.value)}
+                className={`rounded-full px-5 py-2 text-[15px] text-muted transition hover:text-ink aria-selected:bg-[#3b3b3b] aria-selected:text-ink ${wide ? "flex-1" : ""}`}>
           {o.label}
         </button>
       ))}
@@ -87,23 +80,55 @@ export function Segmented<T extends string | number>({ value, onChange, options,
   );
 }
 
-export function Pill({ tone = "muted", children }: { tone?: "muted" | "accent" | "warn" | "bad" | "ink"; children: React.ReactNode }) {
+/** A labelled slider with a value box, like Unsloth's Rank / Alpha / Batch Size rows.
+ * `value` undefined = automatic: the knob sits greyed at `auto`, and typing or dragging sets it. */
+export function SliderRow({ label, hint, value, auto, min, max, step = 1, onChange, disabled, note, format }: {
+  label: string; hint?: string; value: number | undefined; auto: number; min: number; max: number; step?: number;
+  onChange: (v: number | undefined) => void; disabled?: boolean; note?: string; format?: (v: number) => string;
+}) {
+  const shown = value ?? auto;
+  const pct = `${Math.max(0, Math.min(100, ((shown - min) / (max - min)) * 100))}%`;
+  const id = `s-${label.replace(/\W+/g, "-").toLowerCase()}`;
+  return (
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 py-3 ${disabled ? "opacity-45" : ""}`}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <label htmlFor={id} className="text-[15px] text-muted">{label}</label>
+          {hint && <span title={hint} aria-label={hint} className="cursor-help text-faint"><Info className="size-4" /></span>}
+          {value === undefined && !disabled && <span className="rounded-full bg-field px-2 py-0.5 text-[11px] text-faint">Auto</span>}
+        </div>
+        {note && <p className="mt-0.5 text-xs text-faint">{note}</p>}
+      </div>
+      <div className="flex items-center gap-4">
+        <input type="range" min={min} max={max} step={step} value={shown} disabled={disabled} aria-label={label}
+               onChange={(e) => onChange(Number(e.target.value))}
+               className={`slider w-[120px] sm:w-[200px] ${value === undefined ? "auto" : ""}`} style={{ "--pct": pct } as React.CSSProperties} />
+        <input id={id} inputMode="decimal" disabled={disabled} value={value === undefined ? "" : String(value)}
+               placeholder={format ? format(auto) : String(auto)}
+               onChange={(e) => {
+                 const t = e.target.value.trim();
+                 if (!t) return onChange(undefined);
+                 const n = Number(t);
+                 if (Number.isFinite(n)) onChange(Math.max(min, Math.min(max, n)));
+               }}
+               className="h-9 w-20 rounded-full bg-field px-3 text-right font-mono text-sm outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/60" />
+      </div>
+    </div>
+  );
+}
+
+export function Pill({ tone = "muted", children }: { tone?: "muted" | "accent" | "warn" | "bad"; children: React.ReactNode }) {
   const tones = {
-    muted: "border-line text-muted",
-    accent: "border-accent/30 bg-accent/10 text-accent",
-    warn: "border-amber-400/40 bg-amber-400/10 text-amber-700 dark:text-amber-300",
-    bad: "border-red-400/40 bg-red-500/10 text-red-600 dark:text-red-300",
-    ink: "border-ink bg-ink text-ground",
+    muted: "bg-field text-muted",
+    accent: "bg-accent/15 text-accent",
+    warn: "bg-amber-400/15 text-amber-300",
+    bad: "bg-red-500/15 text-red-300",
   };
-  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${tones[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap ${tones[tone]}`}>{children}</span>;
 }
 
 export function ErrorNote({ children }: { children: React.ReactNode }) {
-  return (
-    <p role="alert" className="rounded-xl border border-red-300/60 bg-red-50 px-3.5 py-2.5 text-sm text-red-800 dark:border-red-400/30 dark:bg-red-950/40 dark:text-red-200">
-      {children}
-    </p>
-  );
+  return <p role="alert" className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-200">{children}</p>;
 }
 
 export function Dot({ className = "" }: { className?: string }) {
@@ -126,4 +151,9 @@ export const ago = (ms: number) => {
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+};
+
+export const sci = (v: number) => {
+  const [m, e] = v.toExponential(1).split("e");
+  return `${m.replace(/\.0$/, "")}e${e.replace("+", "")}`;
 };

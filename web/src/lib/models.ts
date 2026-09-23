@@ -8,6 +8,7 @@ export type ModelOption = {
   hfRepo: string | null;
   note: string;
   ready: boolean; // the worker can train it end to end today
+  size?: string | null; // "4B", "1T"
 };
 
 export const DEFAULT_MODEL: ModelOption = {
@@ -17,6 +18,7 @@ export const DEFAULT_MODEL: ModelOption = {
   hfRepo: "zai-org/GLM-5.3-Flash",
   note: "320B · 64K context · LoRA",
   ready: true,
+  size: "320B",
 };
 
 /** What each trainer is, in the Run preview's words. Where training runs is what regulated customers ask first. */
