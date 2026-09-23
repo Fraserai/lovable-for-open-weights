@@ -38,8 +38,9 @@ export default function Studio({ initialTab, initialRun, initialDraft }: { initi
 
   return (
     <main className="mx-auto w-full max-w-[1400px] px-4 pt-6 pb-16 sm:px-10">
-      <div className="flex items-center gap-2 text-sm text-muted">
-        <Logo className="size-5" /> {BRAND.name}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+        <Logo className="size-5" /> <span className="text-ink">{BRAND.name}</span>
+        <span className="text-faint">·</span> <span title={BRAND.mission}>{BRAND.tagline}</span>
       </div>
       <h1 className="mt-8 text-[44px] leading-none font-normal tracking-[-0.02em]">Train</h1>
       <p className="mt-3 text-[17px] text-muted">Configure and start training</p>
