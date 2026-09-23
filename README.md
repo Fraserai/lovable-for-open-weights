@@ -1,6 +1,7 @@
 # Lovable for Open Models
 
 **We're the shovel that lets anyone, and any business, build and own their own intelligence.**
+From Models to Moats. See [BRAND.md](BRAND.md).
 
 A chat-first way to customise open model weights: pick any open model, bring your documents or a
 dataset, say what the model should do, and get back weights you own. Product brief: [CLAUDE.md](CLAUDE.md).
