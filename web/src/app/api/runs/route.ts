@@ -1,27 +1,43 @@
 import { findTrainable } from "@/lib/catalog";
-import { newRunId, startPrepare } from "@/lib/runs";
+import { listRuns, newRunId, startPrepare, type HubSource } from "@/lib/runs";
 
 export const runtime = "nodejs";
 
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
+const HF_ID = /^[\w.-]+\/[\w.-]+$/;
 
-// Start a run: save the uploads, then have the worker write and check training examples.
+// GET -> every run, newest first (History and the sidebar)
+export async function GET() {
+  return Response.json(await listRuns());
+}
+
+// POST -> start a run: save uploads (or name a Hugging Face dataset), then have the worker
+// write or import the training examples and check every row.
 export async function POST(req: Request) {
   const form = await req.formData();
   const goal = String(form.get("goal") ?? "").trim();
   const modelId = String(form.get("model") ?? "");
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  const hf = String(form.get("hf") ?? "").trim();
+  const field = (k: string) => String(form.get(k) ?? "").trim() || undefined;
 
   const model = await findTrainable(modelId);
-  if (!goal) return Response.json({ error: "Describe what the model should do." }, { status: 400 });
+  if (!goal) return Response.json({ error: "Say what the model should do first." }, { status: 400 });
   if (!model) return Response.json({ error: "No connected trainer can fine-tune that model yet." }, { status: 400 });
   if (!model.ready) return Response.json({ error: `${model.name} on ${model.trainer} isn't connected yet.` }, { status: 400 });
-  if (files.length === 0) return Response.json({ error: "Add at least one document." }, { status: 400 });
-  if (files.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES) {
+
+  let hub: HubSource | undefined;
+  if (hf) {
+    if (!HF_ID.test(hf)) return Response.json({ error: "That isn't a Hugging Face dataset id (owner/name)." }, { status: 400 });
+    const limit = Math.min(Math.max(Number(form.get("limit")) || 1000, 10), 20000);
+    hub = { id: hf, config: field("config"), split: field("split"), limit, userField: field("userField"), assistantField: field("assistantField") };
+  } else if (files.length === 0) {
+    return Response.json({ error: "Add documents or a dataset to learn from." }, { status: 400 });
+  } else if (files.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES) {
     return Response.json({ error: "Uploads are over 200 MB in total. Start with fewer documents." }, { status: 413 });
   }
 
   const id = newRunId(goal);
-  await startPrepare(id, goal, model.id, files);
+  await startPrepare(id, goal, model.id, hub ? [] : files, hub);
   return Response.json({ id }, { status: 202 });
 }

@@ -86,3 +86,21 @@ body {
     outline-offset: 2px;
   }
 }
+
+/* App home: the same colours as the glow, as a soft halo behind the prompt with no hard edges */
+.halo {
+  position: absolute;
+  inset: -10% -20% -30%;
+  pointer-events: none;
+  background:
+    radial-gradient(28% 30% at 50% 72%, var(--glow-sun) 0%, transparent 70%),
+    radial-gradient(40% 36% at 50% 70%, var(--glow-gold) 0%, transparent 72%),
+    radial-gradient(36% 40% at 22% 62%, var(--glow-blue) 0%, transparent 72%),
+    radial-gradient(36% 40% at 78% 62%, var(--glow-violet) 0%, transparent 72%);
+  filter: blur(40px);
+  opacity: 0.28;
+  mask-image: radial-gradient(60% 55% at 50% 62%, #000 30%, transparent 75%);
+}
+@media (prefers-color-scheme: dark) {
+  .halo { opacity: 0.22; }
+}

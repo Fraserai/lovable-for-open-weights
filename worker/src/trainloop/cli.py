@@ -191,9 +191,12 @@ def _tinker_rate(base_model: str) -> float | None:
         return None
 
 
-def plan_for(run_dir: Path, state: dict, epochs: int | None = None, lora_rank: int = 32) -> dict:
-    """What a run would cost and how it would be trained. Spends nothing."""
+def plan_for(run_dir: Path, state: dict) -> dict:
+    """What a run would cost and how it would be trained. Spends nothing.
+
+    Settings chosen with `configure` (or train's flags) win; anything unset is sized for the data."""
     base = state["base_model"]
+    epochs, lora_rank, lr = state.get("train_epochs"), state.get("train_lora_rank"), state.get("learning_rate")
     trainer = config.trainer_for(base)
     report = validate_jsonl(run_dir / "train.jsonl", config.BASE_MODEL_TRAIN_CTX.get(base))
     common = {"trainer": trainer, "base_model": base, "rows": report.valid,
@@ -201,27 +204,64 @@ def plan_for(run_dir: Path, state: dict, epochs: int | None = None, lora_rank: i
     if trainer == "tinker":
         from . import tinker
 
-        p = tinker.plan(run_dir / "train.jsonl", run_dir / "tinker", base, state.get("learning_rate"))
+        p = tinker.plan(run_dir / "train.jsonl", run_dir / "tinker", base, lr, epochs, lora_rank)
         tokens = report.est_tokens * p["epochs"]
         rate = _tinker_rate(base)
         return {**common, "examples": p["examples"], "epochs": p["epochs"], "steps": p["steps"],
                 "tokens": tokens, "lora_rank": p["lora_rank"], "renderer": p["renderer"],
                 "max_length": p["max_length"], "truncated_share": p["truncated_share"],
+                "learning_rate": p["learning_rate"], "batch_size": p["batch_size"],
                 "rate_per_million": rate, "est_cost": (tokens / 1e6 * rate) if rate else None}
     if trainer == "unsloth":
         from . import unsloth
 
         p = unsloth.plan(run_dir / "train.jsonl", run_dir / "unsloth", base, report.est_tokens,
-                         config.require("HF_TOKEN"), state.get("learning_rate"))
+                         config.require("HF_TOKEN"), lr, epochs, lora_rank)
         return {**common, "examples": p["examples"], "epochs": p["epochs"], "steps": p["steps"],
                 "tokens": report.est_tokens * p["epochs"], "lora_rank": p["lora_rank"],
-                "learning_rate": p["learning_rate"], "flavor": p["flavor"], "gpu": p["gpu"], "per_hour": p["per_hour"],
+                "learning_rate": p["learning_rate"], "batch_size": p["batch_size"],
+                "flavor": p["flavor"], "gpu": p["gpu"], "per_hour": p["per_hour"],
                 "time_limit_hours": p["time_limit_hours"], "rate_per_million": None,
                 "est_cost": None, "max_cost": p["max_cost"]}
     epochs = epochs or max(1, min(4, -(-250 // max(1, report.valid // 32))))
     return {**common, "examples": report.valid, "epochs": epochs,
             "steps": max(1, report.valid // 32) * epochs, "tokens": report.est_tokens * epochs,
-            "lora_rank": lora_rank, "rate_per_million": None, "est_cost": None}
+            "lora_rank": lora_rank or 32, "learning_rate": lr, "batch_size": 32,
+            "rate_per_million": None, "est_cost": None}
+
+
+LORA_RANKS = (1, 2, 4, 8, 16, 32)  # the most any connected trainer accepts (Fireworks caps at 32)
+
+
+def _set_settings(state: dict, epochs: int | None, lora_rank: int | None, learning_rate: float | None) -> None:
+    """0 means "size it for me" and clears the setting; None leaves it as it is."""
+    if lora_rank not in (None, 0) and lora_rank not in LORA_RANKS:
+        raise typer.BadParameter("must be a power of 2 up to 32", param_hint="--lora-rank")
+    for key, value in (("train_epochs", epochs), ("train_lora_rank", lora_rank), ("learning_rate", learning_rate)):
+        if value == 0:
+            state.pop(key, None)
+        elif value is not None:
+            state[key] = value
+
+
+@app.command()
+def configure(
+    run: RunOpt,
+    base_model: Annotated[Optional[str], typer.Option(help="Switch the model (and so the trainer) before training")] = None,
+    epochs: Annotated[Optional[int], typer.Option(min=0, max=10, help="0 = sized to the dataset")] = None,
+    lora_rank: Annotated[Optional[int], typer.Option(help="Power of 2, max 32; 0 = default")] = None,
+    learning_rate: Annotated[Optional[float], typer.Option(min=0, help="0 = the model's default")] = None,
+):
+    """Choose the model and training settings for a run. Spends nothing; `plan` shows the result."""
+    run_dir = _run_dir(run)
+    state = _load(run_dir)
+    if state.get("job_state") in ("JOB_STATE_RUNNING", "JOB_STATE_COMPLETED"):
+        typer.secho(f"Run is already {state['job_state']}; settings are fixed.", fg="yellow")
+        raise typer.Exit(1)
+    if base_model:
+        state.update(base_model=base_model, trainer=config.trainer_for(base_model))
+    _set_settings(state, epochs, lora_rank, learning_rate)
+    _save(run_dir, state)
 
 
 @app.command()
@@ -252,7 +292,7 @@ def plan(run: RunOpt, as_json: Annotated[bool, typer.Option("--json", help="Mach
 def train(
     run: RunOpt,
     epochs: Annotated[Optional[int], typer.Option(min=1, max=10, help="Default: sized to the dataset")] = None,
-    lora_rank: Annotated[int, typer.Option(help="Power of 2, max 32")] = 32,
+    lora_rank: Annotated[Optional[int], typer.Option(help="Power of 2, max 32 (default 32)")] = None,
     learning_rate: Annotated[Optional[float], typer.Option(help="Leave unset for the model default")] = None,
     yes: Annotated[bool, typer.Option("--yes", help="Skip the confirmation prompt")] = False,
     wait: Annotated[bool, typer.Option(help="Poll until the job finishes")] = False,
@@ -262,14 +302,12 @@ def train(
     """Start a (paid) fine-tuning run on the trainer that hosts the run's base model."""
     from .fireworks import Fireworks
 
-    if lora_rank not in (1, 2, 4, 8, 16, 32):
-        raise typer.BadParameter("must be a power of 2 up to 32", param_hint="--lora-rank")
     run_dir = _run_dir(run)
     state = _load(run_dir)
     trainer = config.trainer_for(state["base_model"])
     if trainer in ("tinker", "unsloth"):
-        if learning_rate:  # recorded on the run so plan and train agree
-            state["learning_rate"] = learning_rate
+        if epochs or lora_rank or learning_rate:  # recorded on the run so plan and train agree
+            _set_settings(state, epochs, lora_rank, learning_rate)
             _save(run_dir, state)
         if trainer == "unsloth":
             _train_unsloth(run_dir, state, yes, held_out)
@@ -289,7 +327,9 @@ def train(
 
     # Small datasets need several passes to learn anything (Post Trainer's 1-epoch runs under-learned);
     # aim for a step count at Fireworks' default batch of 32 samples, capped at 4 epochs.
-    epochs = epochs or max(1, min(4, -(-250 // max(1, report.valid // 32))))
+    _set_settings(state, epochs, lora_rank, learning_rate)
+    p = plan_for(run_dir, state)
+    epochs, lora_rank, learning_rate = p["epochs"], p["lora_rank"], p["learning_rate"]
     typer.echo(
         f"Base model:   {state['base_model']}\n"
         f"Examples:     {report.valid:,}  (~{report.est_tokens:,} tokens x {epochs} epoch(s) "
@@ -338,7 +378,8 @@ def _train_tinker(run_dir: Path, state: dict, yes: bool) -> None:
     base = state["base_model"]
     work = run_dir / "tinker"
     try:
-        p = tinker.plan(run_dir / "train.jsonl", work, base, state.get("learning_rate"))
+        p = tinker.plan(run_dir / "train.jsonl", work, base, state.get("learning_rate"),
+                        state.get("train_epochs"), state.get("train_lora_rank"))
     except tinker.TinkerError as e:
         typer.secho(str(e), fg="red")
         raise typer.Exit(1)
