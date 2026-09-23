@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ACCEPTED_FILES, DEFAULT_MODEL, type ModelOption } from "@/lib/models";
-import { ArrowUp, Close, Doc, Mic, Plus } from "./icons";
+import { ArrowRight, Close, Doc, Mic, Plus } from "./icons";
 import ModelPicker from "./ModelPicker";
 
 export type Brief = { goal: string; files: File[]; model: ModelOption };
 
-const DEFAULT_PLACEHOLDERS = ["Describe the model you want to build"];
+const DEFAULT_PLACEHOLDERS = ["Describe what your model should do"];
 
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
@@ -15,12 +15,12 @@ export function formatBytes(n: number) {
   return `${(n / 1024 ** 2).toFixed(1)} MB`;
 }
 
-/** `preset` fills the box from outside (an industry suggestion); `n` changes on every pick so repeats still apply. */
-export default function Composer({ onSubmit, placeholders = DEFAULT_PLACEHOLDERS, preset }:
-  { onSubmit: (b: Brief) => void; placeholders?: string[]; preset?: { text: string; n: number } }) {
+/** `preset` fills the box from outside (an example); `n` changes on every pick so repeats still apply. */
+export default function Composer({ onSubmit, placeholders = DEFAULT_PLACEHOLDERS, preset, initialModel = DEFAULT_MODEL }:
+  { onSubmit: (b: Brief) => void; placeholders?: string[]; preset?: { text: string; n: number }; initialModel?: ModelOption }) {
   const [goal, setGoal] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [model, setModel] = useState<ModelOption>(DEFAULT_MODEL);
+  const [model, setModel] = useState<ModelOption>(initialModel);
   const [dragging, setDragging] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [ph, setPh] = useState(0);
@@ -69,14 +69,8 @@ export default function Composer({ onSubmit, placeholders = DEFAULT_PLACEHOLDERS
   };
 
   const canSend = goal.trim().length > 0;
-  const send = () => {
-    if (!canSend) return;
-    if (files.length === 0) {
-      setHint("Now add what it learns from: your documents, or a dataset of examples (.jsonl). Use + or drop them here.");
-      return;
-    }
-    onSubmit({ goal: goal.trim(), files, model });
-  };
+  // Documents are optional here: the Train page's Dataset card also takes files or a Hugging Face dataset.
+  const send = () => canSend && onSubmit({ goal: goal.trim(), files, model });
 
   return (
     <div className="w-full">
@@ -130,23 +124,23 @@ export default function Composer({ onSubmit, placeholders = DEFAULT_PLACEHOLDERS
           </button>
 
           <div className="ml-auto flex items-center gap-1">
-            <ModelPicker value={model} onChange={setModel} />
+            <ModelPicker value={model} onChange={setModel} variant="chip" />
 
             <button type="button" aria-label="Voice input (coming soon)" title="Voice input is coming soon" disabled
                     className="grid size-9 place-items-center rounded-full text-faint disabled:cursor-not-allowed">
               <Mic className="size-5" />
             </button>
 
-            <button type="button" onClick={send} disabled={!canSend} aria-label="Start"
-                    className="grid size-9 place-items-center rounded-full bg-ink text-ground transition disabled:opacity-25">
-              <ArrowUp className="size-4" />
+            <button type="button" onClick={send} disabled={!canSend} aria-label="Set up training"
+                    className="flex h-9 items-center gap-1.5 rounded-full bg-ink pr-3 pl-3.5 text-sm font-medium text-ground transition disabled:opacity-25">
+              <span className="hidden sm:inline">Set up training</span> <ArrowRight className="size-4" />
             </button>
           </div>
         </div>
 
         {dragging && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[28px] bg-surface/85 text-sm font-medium text-accent">
-            Drop documents or a dataset
+            Drop documents or a dataset (.jsonl)
           </div>
         )}
       </div>

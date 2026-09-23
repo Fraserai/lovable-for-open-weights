@@ -91,7 +91,7 @@ def time_limit_hours(tokens: int) -> float:
 
 
 def plan(train_jsonl: Path, work_dir: Path, base_model: str, est_tokens: int, token: str,
-         learning_rate: float | None = None) -> dict:
+         learning_rate: float | None = None, epochs: int | None = None, lora_rank: int | None = None) -> dict:
     """Everything decided before any money is spent: GPU, settings, and the most it can cost."""
     from huggingface_hub import HfApi
 
@@ -109,7 +109,7 @@ def plan(train_jsonl: Path, work_dir: Path, base_model: str, est_tokens: int, to
     inputs = work_dir / "input"
     inputs.mkdir(parents=True, exist_ok=True)
     examples = expand_per_assistant_turn(train_jsonl, inputs / "train.jsonl")
-    epochs = resolve_epochs(examples)
+    epochs = epochs or resolve_epochs(examples)
     hours = time_limit_hours(est_tokens * epochs)
     return {
         **gpu,
@@ -119,7 +119,7 @@ def plan(train_jsonl: Path, work_dir: Path, base_model: str, est_tokens: int, to
         "epochs": epochs,
         "steps": math.ceil(examples / BATCH_SIZE) * epochs,
         "learning_rate": learning_rate or LEARNING_RATE,
-        "lora_rank": LORA_RANK,
+        "lora_rank": lora_rank or LORA_RANK,
         "time_limit_hours": hours,
         "max_cost": round(hours * gpu["per_hour"], 2),
     }

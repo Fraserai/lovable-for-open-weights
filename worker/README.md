@@ -26,7 +26,9 @@ prepaid Jobs credit on the account) for Unsloth; `HF_TOKEN` (write) to publish.
     --config ato_interpretative_decisions --limit 300 --base-model Qwen/Qwen3.5-4B --goal "..."
 ./trainloop dataset --run mine --file data.jsonl --goal "..."
 
-# 2. See the plan and cost (free), then train (paid; asks first)
+# 2. Optionally change the model or settings (free; 0 = sized for the data), see the plan and cost
+#    (free), then train (paid; asks first). The web page's Train screen calls these same commands.
+./trainloop configure --run ato --base-model unsloth:Qwen/Qwen3.5-4B --epochs 2 --lora-rank 16
 ./trainloop plan --run ato
 ./trainloop train --run ato
 

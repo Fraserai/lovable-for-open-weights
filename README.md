@@ -21,6 +21,7 @@ also be run from the terminal.
 |---|---|---|
 | Turn documents into training examples | `trainloop prepare` | Docling + OpenRouter (zero data retention) or OpenAI (test only) |
 | Or use a ready-made dataset | `trainloop dataset` | Your `.jsonl`, or a Hugging Face dataset |
+| Choose model, trainer and settings | `trainloop configure` | Free |
 | See what training will cost | `trainloop plan` | Free |
 | Train | `trainloop train` | Fireworks (`accounts/...` models), Tinker (Hugging Face ids) or Unsloth on Hugging Face GPUs (`unsloth:<id>`) |
 | Take the model home | `trainloop fetch --hf-repo you/name` | Download + private Hugging Face repo |
@@ -51,8 +52,13 @@ Never paste keys into chat or commit `.env`; it is git-ignored.
   First run queued: `banking77-unsloth` (Qwen3.5-4B, at most $1.00) against Tinker's 82.5%.
 - **Fireworks:** key, account and a real dataset upload verified live (GLM-5.3-Flash is
   supervised-LoRA tunable on the account). Training not yet run: the account has no credit.
-- **Page:** upload documents or a dataset, model picker (64 trainable models + Hugging Face
-  search), write examples, review cost, train with live progress, talk to your model side by side
-  with the original, take it home to a private Hugging Face repo, reopen any run at `/runs/<id>`.
+- **App (redesigned 2026-09-24, laid out like Unsloth Studio's Train screen, in our own style):** a sidebar
+  (New model, Train, Chat, Models, recent runs, which trainers have keys). Home asks "What should your model
+  do?" and hands the goal, files and model to **Train**, which has three tabs: **Configure** (Goal, Model +
+  trainer + method, Dataset from uploads or a Hugging Face dataset with split/column mapping and preview,
+  Parameters simple/advanced, Save/Load YAML, and a Run preview rail with steps, settings, where it trains and
+  the cost, re-planned live as settings change), **Current run** (progress, loss and learning-rate charts,
+  then side-by-side chat and publish to Hugging Face) and **History**. **Models** lists every tunable model
+  with the trainers that can run it.
 - **Not production-ready:** no login, and training runs as a process of the dev server, so stopping
   the server stops training. Needs a real job runner (see CLAUDE.md) before customers.
