@@ -22,7 +22,7 @@ type Entry = {
 };
 
 // Trainers the worker can run end to end today. Tinker verified live 2026-09-23 (Qwen3.5-4B).
-const WIRED: Trainer[] = ["Fireworks", "Tinker"];
+const WIRED: Trainer[] = ["Fireworks", "Tinker", "Unsloth"];
 
 let refreshing: Promise<void> | null = null;
 
@@ -81,11 +81,22 @@ export async function trainableModels(): Promise<ModelOption[]> {
   return options.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
+const HF_ID = /^[\w.-]+\/[\w.-]+$/;
+
+function unslothOption(repo: string, note = "cloud GPU · LoRA"): ModelOption {
+  return { id: `unsloth:${repo}`, name: repo, trainer: "Unsloth", hfRepo: repo, note, ready: WIRED.includes("Unsloth") };
+}
+
 export async function findTrainable(id: string): Promise<ModelOption | undefined> {
+  if (id.startsWith("unsloth:")) {
+    const repo = id.slice("unsloth:".length);
+    return HF_ID.test(repo) ? unslothOption(repo) : undefined;
+  }
   return (await trainableModels()).find((m) => m.id === id);
 }
 
-/** Any open text model on Hugging Face, labelled with where (if anywhere) we can train it. */
+/** Any open text model on Hugging Face. A connected trainer's own listing wins; anything else trains with
+ * Unsloth on a rented cloud GPU (the worker sizes the GPU, and refuses models too big for one, before any cost). */
 export async function searchHub(query: string): Promise<ModelOption[]> {
   const url = new URL("https://huggingface.co/api/models");
   url.searchParams.set("search", query);
@@ -98,12 +109,6 @@ export async function searchHub(query: string): Promise<ModelOption[]> {
   const hits: { id: string; downloads?: number }[] = await res.json();
 
   const byRepo = new Map((await trainableModels()).filter((m) => m.hfRepo).map((m) => [m.hfRepo!.toLowerCase(), m]));
-  return hits.map((h) => byRepo.get(h.id.toLowerCase()) ?? {
-    id: `hf:${h.id}`,
-    name: h.id,
-    trainer: null,
-    hfRepo: h.id,
-    note: `${(h.downloads ?? 0).toLocaleString()} downloads`,
-    ready: false,
-  });
+  return hits.map((h) => byRepo.get(h.id.toLowerCase())
+    ?? unslothOption(h.id, `${(h.downloads ?? 0).toLocaleString()} downloads · cloud GPU · LoRA`));
 }

@@ -208,6 +208,16 @@ def plan_for(run_dir: Path, state: dict, epochs: int | None = None, lora_rank: i
                 "tokens": tokens, "lora_rank": p["lora_rank"], "renderer": p["renderer"],
                 "max_length": p["max_length"], "truncated_share": p["truncated_share"],
                 "rate_per_million": rate, "est_cost": (tokens / 1e6 * rate) if rate else None}
+    if trainer == "unsloth":
+        from . import unsloth
+
+        p = unsloth.plan(run_dir / "train.jsonl", run_dir / "unsloth", base, report.est_tokens,
+                         config.require("HF_TOKEN"), state.get("learning_rate"))
+        return {**common, "examples": p["examples"], "epochs": p["epochs"], "steps": p["steps"],
+                "tokens": report.est_tokens * p["epochs"], "lora_rank": p["lora_rank"],
+                "learning_rate": p["learning_rate"], "flavor": p["flavor"], "gpu": p["gpu"], "per_hour": p["per_hour"],
+                "time_limit_hours": p["time_limit_hours"], "rate_per_million": None,
+                "est_cost": None, "max_cost": p["max_cost"]}
     epochs = epochs or max(1, min(4, -(-250 // max(1, report.valid // 32))))
     return {**common, "examples": report.valid, "epochs": epochs,
             "steps": max(1, report.valid // 32) * epochs, "tokens": report.est_tokens * epochs,
@@ -217,12 +227,21 @@ def plan_for(run_dir: Path, state: dict, epochs: int | None = None, lora_rank: i
 @app.command()
 def plan(run: RunOpt, as_json: Annotated[bool, typer.Option("--json", help="Machine-readable")] = False):
     """Show how a run would be trained and what it would cost. Spends nothing."""
+    from .unsloth import UnslothError
+
     run_dir = _run_dir(run)
-    p = plan_for(run_dir, _load(run_dir))
+    try:
+        p = plan_for(run_dir, _load(run_dir))
+    except UnslothError as e:
+        typer.secho(str(e), fg="red", err=True)
+        raise typer.Exit(1)
     if as_json:
         typer.echo(json.dumps(p))
         return
-    cost = f"~${p['est_cost']:.4f} at ${p['rate_per_million']}/M tokens" if p["est_cost"] else "not published by this trainer"
+    cost = (f"~${p['est_cost']:.4f} at ${p['rate_per_million']}/M tokens" if p["est_cost"]
+            else f"at most ${p['max_cost']:.2f} ({p['gpu']} at ${p['per_hour']}/hr, billed by the second, "
+                 f"{p['time_limit_hours']}h limit)" if p.get("max_cost") is not None
+            else "not published by this trainer")
     typer.echo(f"Base model: {p['base_model']} ({p['trainer']})\n"
                f"Examples:   {p['examples']:,} x {p['epochs']} epoch(s) = {p['steps']} steps, ~{p['tokens']:,} tokens\n"
                f"LoRA rank:  {p['lora_rank']}\n"
@@ -237,6 +256,8 @@ def train(
     learning_rate: Annotated[Optional[float], typer.Option(help="Leave unset for the model default")] = None,
     yes: Annotated[bool, typer.Option("--yes", help="Skip the confirmation prompt")] = False,
     wait: Annotated[bool, typer.Option(help="Poll until the job finishes")] = False,
+    held_out: Annotated[Optional[Path], typer.Option(exists=True, help="Unsloth only: JSONL of examples kept out of "
+                                                     "training; scores the original and trained model on them")] = None,
 ):
     """Start a (paid) fine-tuning run on the trainer that hosts the run's base model."""
     from .fireworks import Fireworks
@@ -245,11 +266,15 @@ def train(
         raise typer.BadParameter("must be a power of 2 up to 32", param_hint="--lora-rank")
     run_dir = _run_dir(run)
     state = _load(run_dir)
-    if config.trainer_for(state["base_model"]) == "tinker":
+    trainer = config.trainer_for(state["base_model"])
+    if trainer in ("tinker", "unsloth"):
         if learning_rate:  # recorded on the run so plan and train agree
             state["learning_rate"] = learning_rate
             _save(run_dir, state)
-        _train_tinker(run_dir, state, yes)
+        if trainer == "unsloth":
+            _train_unsloth(run_dir, state, yes, held_out)
+        else:
+            _train_tinker(run_dir, state, yes)
         return
     if state.get("job"):
         typer.secho(f"Run already has job {state['job']}. Use `trainloop status --run {run}`.", fg="yellow")
@@ -348,6 +373,95 @@ def _train_tinker(run_dir: Path, state: dict, yes: bool) -> None:
     typer.secho(f"Done. Get the model: trainloop fetch --run {state['name']} [--hf-repo you/name]", fg="green")
 
 
+def _train_unsloth(run_dir: Path, state: dict, yes: bool, held_out: Optional[Path]) -> None:
+    """Unsloth runs as a cloud GPU job: plan (free) -> confirm -> launch (paid) -> follow its log."""
+    from . import unsloth
+
+    if state.get("job_state") in ("JOB_STATE_RUNNING", "JOB_STATE_COMPLETED"):
+        typer.secho(f"Run is already {state['job_state']}. Use `trainloop status --run {state['name']}`.", fg="yellow")
+        raise typer.Exit(1)
+    def stop(message: str) -> None:  # recorded so the web page can show why, not just the log
+        state.update(job_state="JOB_STATE_FAILED", error=message)
+        _save(run_dir, state)
+        typer.secho(message, fg="red")
+        raise typer.Exit(1)
+
+    try:
+        p = plan_for(run_dir, state)
+    except unsloth.UnslothError as e:
+        stop(str(e))
+    if not p["ok"]:
+        typer.echo("\n".join(p["report"]))
+        typer.secho("Fix the errors above before training.", fg="red")
+        raise typer.Exit(1)
+
+    typer.echo(
+        f"Base model:    {unsloth.hf_id(state['base_model'])} (Unsloth on a Hugging Face {p['gpu']})\n"
+        f"Examples:      {p['examples']:,} x {p['epochs']} epoch(s) = {p['steps']} steps, ~{p['tokens']:,} training tokens\n"
+        f"Settings:      LoRA rank {p['lora_rank']}, learning rate {p['learning_rate']:.2e}, 16-bit\n"
+        f"Cost:          ${p['per_hour']}/hr, billed by the second; at most ${p['max_cost']:.2f} "
+        f"({p['time_limit_hours']}h time limit)"
+    )
+    if not yes:
+        typer.confirm("This starts a paid GPU job on your Hugging Face account. Continue?", abort=True)
+
+    token = config.require("HF_TOKEN")
+    from huggingface_hub import HfApi
+
+    repo = f"{HfApi(token=token).whoami()['name']}/{state['name']}"
+    work = run_dir / "unsloth"
+    unsloth_plan = {k: p[k] for k in ("flavor", "gpu", "per_hour", "time_limit_hours", "max_cost", "examples",
+                                      "epochs", "steps", "learning_rate", "lora_rank")}
+    try:
+        job = unsloth.launch(work, state["base_model"], {**unsloth_plan, "batch_size": unsloth.BATCH_SIZE},
+                             repo, token, state["name"], held_out)
+    except unsloth.UnslothError as e:
+        stop(str(e))
+    state.update(job="unsloth", job_id=job.id, job_url=job.url, job_state="JOB_STATE_RUNNING",
+                 output_repo=repo, unsloth_plan=unsloth_plan, epochs=p["epochs"], lora_rank=p["lora_rank"])
+    state.pop("error", None)
+    _save(run_dir, state)
+    typer.secho(f"Started {job.url}", fg="green")
+    _follow_unsloth(run_dir, state)
+
+
+def _follow_unsloth(run_dir: Path, state: dict) -> None:
+    """Follows the cloud job to the end, recording progress; safe to call again to reattach."""
+    from . import unsloth
+
+    total = state["unsloth_plan"]["steps"]
+
+    def show(event: dict) -> None:
+        kind = event["event"]
+        if kind == "loading":
+            typer.echo(f"  loading {event['model']} on {event['gpu']}")
+        elif kind == "data":
+            typer.echo(f"  {event['rows']:,} examples ready (longest {event['longest']:,} tokens)")
+        elif kind == "step" and (event["step"] % 10 == 0 or event["step"] == event.get("total")):
+            typer.echo(f"  step {event['step']} of ~{event.get('total') or total}, loss {event['loss']:.4f}")
+        elif kind == "pushed":
+            typer.echo(f"  adapter saved to https://huggingface.co/{event['repo']} (private)")
+        elif kind == "eval":
+            typer.echo(f"  held-out check on {event['examples']}: original {event['original']:.1%}, "
+                       f"trained {event['trained']:.1%}")
+
+    result = unsloth.follow(state["job_id"], run_dir / "unsloth", config.require("HF_TOKEN"), show)
+    if result["eval"]:
+        (run_dir / "unsloth" / "held_out.json").write_text(json.dumps(result["eval"], indent=2))
+    if result["pushed"]:  # the model is safe even if something after the push failed
+        state.update(job_state="JOB_STATE_COMPLETED", hf_repo=f"https://huggingface.co/{result['pushed']}")
+        if result["error"]:
+            state["warning"] = result["error"]
+        _save(run_dir, state)
+        typer.secho(f"Done. Your model: {state['hf_repo']} (private). Download it: trainloop fetch --run {state['name']}",
+                    fg="green")
+        return
+    state.update(job_state="JOB_STATE_FAILED", error=result["error"] or f"The job ended ({result['stage']}).")
+    _save(run_dir, state)
+    typer.secho(f"Training stopped: {state['error']}", fg="red")
+    raise typer.Exit(1)
+
+
 def _print_job(job: dict) -> None:
     progress = job.get("jobProgress") or {}
     pct = f" {progress['percent']}%" if "percent" in progress else ""
@@ -368,6 +482,11 @@ def status(run: RunOpt, wait: Annotated[bool, typer.Option(help="Poll until the 
         raise typer.Exit(1)
     if state["job"] == "tinker":  # Tinker runs in the foreground; its state is recorded as it goes
         typer.echo(state.get("job_state", "unknown") + (f"  {state['error']}" if state.get("error") else ""))
+        return
+    if state["job"] == "unsloth":  # a cloud job: reattach to its log (it keeps running without us)
+        typer.echo(f"{state.get('job_state', 'unknown')}  {state.get('job_url', '')}")
+        if state.get("job_state") == "JOB_STATE_RUNNING" or wait:
+            _follow_unsloth(run_dir, state)
         return
     fw = Fireworks(config.require("FIREWORKS_API_KEY"), config.require("FIREWORKS_ACCOUNT_ID"))
     try:
@@ -403,6 +522,15 @@ def fetch(
         raise typer.Exit(1)
 
     dest = run_dir / "model"
+    if state["job"] == "unsloth":
+        from . import unsloth
+
+        typer.echo(f"Downloading the adapter from {state['hf_repo']} ...")
+        files = unsloth.download(state["output_repo"], dest, config.require("HF_TOKEN"))
+        typer.echo(f"Downloaded {len(files)} files to {dest}")
+        if hf_repo not in (None, "auto", state["output_repo"]):
+            typer.secho(f"Already in your private repo {state['hf_repo']}; not copying it to {hf_repo}.", fg="yellow")
+        return
     if state["job"] == "tinker":
         from . import tinker
 

@@ -1,5 +1,5 @@
 // The live list comes from lib/catalog.ts (trainer support lists + Hugging Face search).
-export type Trainer = "Fireworks" | "Tinker";
+export type Trainer = "Fireworks" | "Tinker" | "Unsloth";
 
 export type ModelOption = {
   id: string;

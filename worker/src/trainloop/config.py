@@ -47,5 +47,8 @@ def generator_provider() -> str:
 
 
 def trainer_for(base_model: str) -> str:
-    """Fireworks models are named accounts/<acct>/models/<id>; Tinker uses Hugging Face ids."""
-    return "fireworks" if base_model.startswith("accounts/") else "tinker"
+    """Fireworks models are named accounts/<acct>/models/<id>, Unsloth ones unsloth:<hugging face id>;
+    a plain Hugging Face id trains on Tinker."""
+    if base_model.startswith("accounts/"):
+        return "fireworks"
+    return "unsloth" if base_model.startswith("unsloth:") else "tinker"

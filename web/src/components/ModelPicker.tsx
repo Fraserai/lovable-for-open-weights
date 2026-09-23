@@ -105,8 +105,8 @@ export default function ModelPicker({ value, onChange }: { value: ModelOption; o
             )}
 
             {hubOnly.length > 0 && (
-              <Section title="On Hugging Face · no trainer yet">
-                {hubOnly.map((m) => <Row key={m.id} m={m} selected={false} onPick={pick} disabled />)}
+              <Section title="Anything else on Hugging Face">
+                {hubOnly.map((m) => <Row key={m.id} m={m} selected={m.id === value.id} onPick={pick} disabled={!m.ready} />)}
               </Section>
             )}
 

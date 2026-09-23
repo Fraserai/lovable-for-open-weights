@@ -22,7 +22,7 @@ also be run from the terminal.
 | Turn documents into training examples | `trainloop prepare` | Docling + OpenRouter (zero data retention) or OpenAI (test only) |
 | Or use a ready-made dataset | `trainloop dataset` | Your `.jsonl`, or a Hugging Face dataset |
 | See what training will cost | `trainloop plan` | Free |
-| Train | `trainloop train` | Fireworks (`accounts/...` models) or Tinker (Hugging Face ids) |
+| Train | `trainloop train` | Fireworks (`accounts/...` models), Tinker (Hugging Face ids) or Unsloth on Hugging Face GPUs (`unsloth:<id>`) |
 | Take the model home | `trainloop fetch --hf-repo you/name` | Download + private Hugging Face repo |
 
 ## Run it locally
@@ -46,6 +46,9 @@ Never paste keys into chat or commit `.env`; it is git-ignored.
   `trainloop dataset/train`, then `worker/scripts/banking77_score.py <run>`.
 - **Tinker:** proven end to end with real runs (Qwen3.5-4B on a PDS and on 300 ATO decisions),
   published to a private Hugging Face repo.
+- **Unsloth on Hugging Face Jobs:** wired end to end (plan, launch, live progress, private-repo handback,
+  web picker for any Hub model). Not yet run live: the Hugging Face account needs prepaid Jobs credit.
+  First run queued: `banking77-unsloth` (Qwen3.5-4B, at most $1.00) against Tinker's 82.5%.
 - **Fireworks:** key, account and a real dataset upload verified live (GLM-5.3-Flash is
   supervised-LoRA tunable on the account). Training not yet run: the account has no credit.
 - **Page:** upload documents or a dataset, model picker (64 trainable models + Hugging Face

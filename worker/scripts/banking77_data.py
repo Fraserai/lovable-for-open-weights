@@ -55,6 +55,13 @@ def main_balanced(per_label: int = 20, seed: int = 11) -> None:
     print(f"wrote {len(rows)} balanced examples ({per_label} per intent) to {OUT}")
 
 
+def main_held_out() -> None:
+    """The same 200 held-out test rows as JSONL, for trainers that score in the job (Unsloth)."""
+    test = json.loads((OUT / "test.json").read_text())
+    write_train(test["rows"], test["system"], OUT / "held_out.jsonl")
+    print(f"wrote {len(test['rows'])} held-out rows to {OUT / 'held_out.jsonl'}")
+
+
 def main(n_train: int = 1000, n_test: int = 200, seed: int = 7) -> None:
     train, test = fetch("train"), fetch("test")
     labels = sorted({r["label_text"] for r in train})
@@ -77,5 +84,7 @@ def main(n_train: int = 1000, n_test: int = 200, seed: int = 7) -> None:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["balanced"]:
         main_balanced(*map(int, sys.argv[2:]))
+    elif sys.argv[1:2] == ["held-out"]:
+        main_held_out()
     else:
         main(*map(int, sys.argv[1:]))

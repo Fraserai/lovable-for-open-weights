@@ -7,13 +7,7 @@ import ModelPicker from "./ModelPicker";
 
 export type Brief = { goal: string; files: File[]; model: ModelOption };
 
-const PLACEHOLDERS = [
-  "Train a model that answers member questions from our PDS…",
-  "Teach GLM to draft complaint responses in our tone…",
-  "Turn our policy manuals into an internal support assistant…",
-  "Train on this dataset so it answers like our compliance team…",
-  "Make a model that explains our investment options in plain English…",
-];
+const DEFAULT_PLACEHOLDERS = ["Describe the model you want to build"];
 
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
@@ -21,7 +15,9 @@ export function formatBytes(n: number) {
   return `${(n / 1024 ** 2).toFixed(1)} MB`;
 }
 
-export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Brief) => void; examples?: string[] }) {
+/** `preset` fills the box from outside (an industry suggestion); `n` changes on every pick so repeats still apply. */
+export default function Composer({ onSubmit, placeholders = DEFAULT_PLACEHOLDERS, preset }:
+  { onSubmit: (b: Brief) => void; placeholders?: string[]; preset?: { text: string; n: number } }) {
   const [goal, setGoal] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [model, setModel] = useState<ModelOption>(DEFAULT_MODEL);
@@ -34,17 +30,30 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
   // Rotate the example placeholder while the box is empty
   useEffect(() => {
     if (goal) return;
-    const t = setInterval(() => setPh((i) => (i + 1) % PLACEHOLDERS.length), 3500);
+    const t = setInterval(() => setPh((i) => (i + 1) % placeholders.length), 3500);
     return () => clearInterval(t);
-  }, [goal]);
+  }, [goal, placeholders]);
 
-  // Grow the textarea with its content
+  // Take a new preset as soon as it arrives, then put the cursor in the box
+  const [applied, setApplied] = useState(preset);
+  if (preset !== applied) {
+    setApplied(preset);
+    if (preset) setGoal(preset.text);
+  }
+  useEffect(() => {
+    if (preset) text.current?.focus();
+  }, [preset]);
+
+  // Grow the textarea with its content (or with the example placeholder while it's empty)
   useEffect(() => {
     const el = text.current;
     if (!el) return;
+    if (!goal) el.value = el.placeholder;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
-  }, [goal]);
+    el.style.overflowY = el.scrollHeight > 240 ? "auto" : "hidden";
+    if (!goal) el.value = "";
+  }, [goal, ph, placeholders]);
 
   const addFiles = (list: FileList | null) => {
     if (!list) return;
@@ -63,7 +72,7 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
   const send = () => {
     if (!canSend) return;
     if (files.length === 0) {
-      setHint("Add what the model should learn from: documents, or a ready-made dataset (.jsonl). Use + or drop them here.");
+      setHint("Now add what it learns from: your documents, or a dataset of examples (.jsonl). Use + or drop them here.");
       return;
     }
     onSubmit({ goal: goal.trim(), files, model });
@@ -97,7 +106,7 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
           </ul>
         )}
 
-        <label htmlFor="goal" className="sr-only">Describe what you want your model to do</label>
+        <label htmlFor="goal" className="sr-only">Describe the model you want to build</label>
         <textarea
           id="goal"
           ref={text}
@@ -107,7 +116,7 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
           }}
-          placeholder={PLACEHOLDERS[ph]}
+          placeholder={`${placeholders[ph % placeholders.length]}…`}
           className="block w-full resize-none bg-transparent px-6 pt-5 pb-2 text-[17px] leading-relaxed text-ink outline-none focus-visible:outline-none placeholder:text-faint"
         />
 
@@ -137,21 +146,11 @@ export default function Composer({ onSubmit, examples = [] }: { onSubmit: (b: Br
 
         {dragging && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-[28px] bg-surface/85 text-sm font-medium text-accent">
-            Drop documents to add them
+            Drop documents or a dataset
           </div>
         )}
       </div>
       <p className="mt-3 min-h-5 text-center text-sm text-muted" aria-live="polite">{hint}</p>
-      {examples.length > 0 && (
-        <div className="mt-2 flex flex-wrap justify-center gap-2">
-          {examples.map((e) => (
-            <button key={e} type="button" onClick={() => { setGoal(e); text.current?.focus(); }}
-                    className="rounded-full border border-line bg-surface/70 px-3.5 py-1.5 text-sm text-muted backdrop-blur transition hover:bg-surface hover:text-ink">
-              {e}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
