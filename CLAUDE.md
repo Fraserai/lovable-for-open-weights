@@ -1,5 +1,9 @@
 # Project: Lovable for Open Models
 
+## Mission
+**We're the shovel that lets anyone, and any business, build and own their own intelligence.**
+Not one use case: whatever people build, the job is that anyone can make a model and walk away owning it.
+
 ## What we're building
 A Lovable-style, chat-first platform for customising open model weights.
 A team picks any open model, brings the content they want the model trained on
