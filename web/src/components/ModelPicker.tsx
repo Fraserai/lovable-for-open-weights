@@ -40,7 +40,7 @@ export function trainerChoices(value: ModelOption, all: ModelOption[]): ModelOpt
 export function TrainerBadge({ m }: { m: ModelOption }) {
   if (!m.trainer) return null;
   return (
-    <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${m.ready ? "bg-accent/15 text-accent" : "bg-field text-faint"}`}
+    <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${m.ready ? "bg-accent/12 text-accent" : "bg-black/5 text-faint"}`}
           title={m.ready ? `Trains on ${m.trainer}` : `${m.trainer} isn't connected yet`}>
       {m.trainer}
     </span>
@@ -109,17 +109,17 @@ export default function ModelPicker({ value, onChange, id }: { value: ModelOptio
   return (
     <div ref={root} className="relative">
       <button id={id} type="button" onClick={toggle} aria-haspopup="listbox" aria-expanded={open}
-              className="flex h-12 w-full items-center gap-3 rounded-2xl bg-field px-4 text-left transition hover:bg-[#363636]">
+              className="flex h-12 w-full items-center gap-3 rounded-2xl border border-white/70 bg-field px-4 text-left transition hover:bg-white/80">
         <Chip className="size-5 shrink-0 text-muted" />
         <span className="min-w-0 flex-1 truncate text-[15px]">{value.name}</span>
         <Chevron className="size-5 shrink-0 text-muted" />
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 z-30 mt-2 flex max-h-[min(520px,70vh)] w-[min(520px,calc(100vw-32px))] flex-col overflow-hidden rounded-3xl bg-[#2a2a2a] p-3 shadow-[var(--shadow)]">
+        <div className="glass-pop absolute top-full left-0 z-30 mt-2 flex max-h-[min(520px,70vh)] w-[min(520px,calc(100vw-32px))] flex-col overflow-hidden rounded-3xl p-3">
           <Tabs label="Model source" value={tab} onChange={(t) => { setTab(t); setQuery(""); }} wide
                 options={[{ value: "trainers", label: "Trainers" }, { value: "hub", label: "Hugging Face" }]} />
-          <div className="mt-3 flex items-center gap-2 rounded-2xl bg-field px-4">
+          <div className="mt-3 flex items-center gap-2 rounded-2xl bg-black/[0.05] px-4">
             <Search className="size-4 text-faint" />
             <label htmlFor="model-search" className="sr-only">Search models</label>
             <input id="model-search" ref={search} value={query} onChange={(e) => setQuery(e.target.value)}
@@ -138,7 +138,7 @@ export default function ModelPicker({ value, onChange, id }: { value: ModelOptio
               const ready = g.options.some((o) => o.ready);
               return (
                 <button key={g.key} type="button" role="option" aria-selected={g.key === selectedKey} disabled={!ready} onClick={() => pick(g)}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition enabled:hover:bg-field disabled:cursor-default aria-selected:bg-field">
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition enabled:hover:bg-black/[0.05] disabled:cursor-default aria-selected:bg-accent/10">
                   <span className="min-w-0 flex-1">
                     <span className={`block truncate text-[15px] ${ready ? "" : "text-muted"}`}>{g.name}</span>
                     <span className="block truncate font-mono text-xs text-faint">{g.options[0].hfRepo ?? g.options[0].id}</span>

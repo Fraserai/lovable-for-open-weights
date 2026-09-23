@@ -38,7 +38,7 @@ export default function RunPreview({ model, method, dataset, split, rows, plan, 
   ];
 
   return (
-    <aside className="rounded-[32px] border border-line bg-[#212121] lg:sticky lg:top-6" aria-label="Run preview">
+    <aside className="glass rounded-[32px] lg:sticky lg:top-6" aria-label="Run preview">
       <div className="p-7 sm:p-8">
         <div className="flex items-center justify-between">
           <p className="text-[15px] text-muted">Run preview</p>
@@ -91,7 +91,7 @@ export default function RunPreview({ model, method, dataset, split, rows, plan, 
         </dl>
 
         {plan && plan.ignored.length > 0 && (
-          <p className="mt-6 text-sm text-amber-300/90">
+          <p className="mt-6 text-sm text-amber-800">
             {trainer?.label} ignores: {plan.ignored.map((k) => LABELS[k as Key] ?? k).join(", ")}.
           </p>
         )}
