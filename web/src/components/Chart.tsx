@@ -49,7 +49,7 @@ export default function Chart({ title, points, smooth = false, format = fmt, emp
   const last = line.at(-1);
 
   return (
-    <figure className="rounded-[32px] bg-surface p-6 sm:p-8">
+    <figure className="glass rounded-[32px] p-6 sm:p-8">
       <figcaption className="flex items-baseline justify-between gap-3">
         <span className="text-[17px]">{title}{smooth && <span className="ml-2 text-xs font-normal text-faint">smoothed</span>}</span>
         <span className="font-mono text-sm text-muted tabular-nums">

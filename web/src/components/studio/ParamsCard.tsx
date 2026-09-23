@@ -27,7 +27,7 @@ export default function ParamsCard({ s, set, trainer, plan }: {
   const steps = plan?.steps ?? 250;
 
   return (
-    <Card icon={<Sliders className="size-6" />} tone="#c9a45c" title="Parameters" subtitle="Configure training parameters"
+    <Card icon={<Sliders className="size-6" />} tone="#ff9500" title="Parameters" subtitle="Configure training parameters"
           action={<Tabs label="Detail" value={mode} onChange={setMode} options={[{ value: "simple", label: "Simple" }, { value: "advanced", label: "Advanced" }]} />}>
       <div className="grid gap-x-10 gap-y-7 @2xl:grid-cols-2">
         <div>
@@ -87,7 +87,7 @@ export default function ParamsCard({ s, set, trainer, plan }: {
                               const next = on ? cur.filter((x) => x !== m) : [...cur, m];
                               if (next.length) set({ target_modules: next.length === TARGET_MODULES.length ? undefined : next });
                             }}
-                            className="rounded-full px-3.5 py-1.5 font-mono text-sm transition disabled:cursor-not-allowed aria-pressed:bg-field aria-pressed:text-ink not-aria-pressed:text-faint not-aria-pressed:line-through">
+                            className="rounded-full px-3.5 py-1.5 font-mono text-sm transition disabled:cursor-not-allowed aria-pressed:bg-white/80 aria-pressed:text-ink aria-pressed:shadow-sm not-aria-pressed:text-faint not-aria-pressed:line-through">
                       {m}
                     </button>
                   );
@@ -173,12 +173,12 @@ function StepsOrEpochs({ label, hint, value, auto, min, max, onChange, disabled,
       <div className="mb-2.5 flex items-center gap-2">
         <label htmlFor="steps" className="text-[15px] text-muted">{label}</label>
         <span title={hint} aria-label={hint} className="cursor-help text-faint"><Info className="size-4" /></span>
-        {value === undefined && !disabled && <span className="rounded-full bg-field px-2 py-0.5 text-[11px] text-faint">Auto</span>}
+        {value === undefined && !disabled && <span className="rounded-full bg-white/60 px-2 py-0.5 text-[11px] text-faint">Auto</span>}
         <span className="ml-auto flex items-center gap-4">
           {link}
           <input id="steps" inputMode="numeric" value={value ?? ""} placeholder={String(auto)} disabled={disabled}
                  onChange={(e) => { const n = Number(e.target.value); onChange(e.target.value.trim() && Number.isFinite(n) ? Math.max(min, Math.min(max, Math.round(n))) : undefined); }}
-                 className="h-9 w-20 rounded-full bg-field px-3 text-right font-mono text-sm outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/60" />
+                 className="h-9 w-20 rounded-full border border-white/70 bg-field px-3 text-right font-mono text-sm outline-none placeholder:text-muted focus:ring-4 focus:ring-accent/15" />
         </span>
       </div>
       {note && <p className="-mt-1 mb-2 text-xs text-faint">{note}</p>}
@@ -202,8 +202,8 @@ function LrInput({ value, auto, onChange }: { value: number | undefined; auto: n
                if (!e.target.value.trim()) onChange(undefined);
                else if (Number.isFinite(v) && v > 0 && v < 0.1) onChange(v);
              }}
-             className={`${input} font-mono ${bad ? "ring-2 ring-red-400/70" : ""}`} />
-      {bad && <p className="mt-1.5 text-xs text-red-300">Use a number like 0.0002 or 2e-4.</p>}
+             className={`${input} font-mono ${bad ? "ring-4 ring-red-400/30" : ""}`} />
+      {bad && <p className="mt-1.5 text-xs text-red-600">Use a number like 0.0002 or 2e-4.</p>}
     </>
   );
 }
@@ -212,7 +212,7 @@ function NumberInput({ value, auto, onChange, disabled }: { value: number | unde
   return (
     <input inputMode="decimal" value={value ?? ""} placeholder={auto} disabled={disabled}
            onChange={(e) => { const n = Number(e.target.value); onChange(e.target.value.trim() && Number.isFinite(n) ? n : undefined); }}
-           className="ml-auto block h-12 w-full max-w-[200px] rounded-2xl bg-field px-4 font-mono text-[15px] outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed" />
+           className="ml-auto block h-12 w-full max-w-[200px] rounded-2xl border border-white/70 bg-field px-4 font-mono text-[15px] outline-none placeholder:text-muted focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed" />
   );
 }
 
@@ -245,7 +245,7 @@ function Section({ title, open, onToggle, children }: { title: string; open: boo
 function Variant({ title, sub, on, disabled, onPick }: { title: string; sub: string; on: boolean; disabled?: boolean; onPick: () => void }) {
   return (
     <button type="button" role="radio" aria-checked={on} disabled={disabled} onClick={onPick}
-            className="rounded-2xl bg-field px-5 py-3.5 text-left transition enabled:hover:bg-[#363636] disabled:cursor-not-allowed disabled:opacity-45 aria-checked:bg-[#3a3a3a] aria-checked:ring-1 aria-checked:ring-accent/50">
+            className="rounded-2xl border border-white/70 bg-field px-5 py-3.5 text-left transition enabled:hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-45 aria-checked:bg-white aria-checked:shadow-[0_4px_16px_-6px_rgb(0_0_0/0.2)] aria-checked:ring-2 aria-checked:ring-accent/60">
       <span className="block text-[15px]">{title}</span>
       <span className="block text-[13px] text-muted">{sub}</span>
     </button>

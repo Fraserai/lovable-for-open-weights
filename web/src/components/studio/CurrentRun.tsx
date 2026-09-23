@@ -43,7 +43,7 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <section className="rounded-[32px] bg-surface p-6 sm:p-8" aria-label="Status">
+        <section className="glass rounded-[32px] p-6 sm:p-8" aria-label="Status">
           <div className="flex flex-wrap items-start gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-[13px] tracking-[0.08em] text-muted uppercase">{trainer ? TRAINERS[trainer].label : "Run"}</p>
@@ -54,7 +54,7 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
           </div>
 
           <p className="mt-8 text-3xl font-light tabular-nums">Epoch {perEpoch ? (t.steps / perEpoch).toFixed(2) : "—"}</p>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-field" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Training progress">
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-black/[0.08]" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Training progress">
             <div className="h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: `${t.state === "done" ? 100 : pct}%` }} />
           </div>
           <p className="mt-2 flex justify-between text-sm text-muted">
@@ -91,7 +91,7 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
           )}
         </section>
 
-        <section className="rounded-[32px] bg-surface p-6 sm:p-8" aria-label="Trainer">
+        <section className="glass rounded-[32px] p-6 sm:p-8" aria-label="Trainer">
           <p className="text-[13px] tracking-[0.08em] text-muted uppercase">Trainer</p>
           <dl className="mt-5 space-y-4 text-[15px]">
             {([

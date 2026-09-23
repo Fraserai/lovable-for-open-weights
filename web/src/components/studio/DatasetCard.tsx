@@ -52,7 +52,7 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
   const autoWorks = !!info && (info.chat || !!info.guess);
 
   return (
-    <Card icon={<Database className="size-6" />} tone="#c0708a" title="Dataset" subtitle="Select or upload training data">
+    <Card icon={<Database className="size-6" />} tone="#ff2d55" title="Dataset" subtitle="Select or upload training data">
       <div className="grid gap-6 @2xl:grid-cols-2">
         <div>
           <Label upper hint="Any dataset on Hugging Face with chat messages or question/answer columns. Imported as-is." htmlFor="dataset">Dataset</Label>
@@ -66,8 +66,8 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
       </div>
 
       {source && (
-        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-3xl border border-line px-5 py-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#6d5bd0]/20 text-[#a99bff]">
+        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-3xl border border-white/70 bg-white/35 px-5 py-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#af52de]/15 text-[#8e3fc0]">
             {source.kind === "hub" ? <Hug className="size-5" /> : <Doc className="size-5" />}
           </span>
           <div className="min-w-[12rem] flex-1">
@@ -164,7 +164,7 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
             </div>
           )}
           {hub && info && !autoWorks && mapping === "auto" && (
-            <p className="mt-3 text-sm text-amber-300">Open Advanced and pick which column is the question and which is the answer.</p>
+            <p className="mt-3 text-sm text-amber-800">Open Advanced and pick which column is the question and which is the answer.</p>
           )}
         </div>
       )}
@@ -206,14 +206,14 @@ function HubSearch({ value, onPick }: { value: string | null; onPick: (id: strin
   return (
     <div ref={root} className="relative">
       <button id="dataset" type="button" onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open}
-              className="flex h-12 w-full items-center gap-3 rounded-2xl bg-field px-4 text-left transition hover:bg-[#363636]">
+              className="flex h-12 w-full items-center gap-3 rounded-2xl border border-white/70 bg-field px-4 text-left transition hover:bg-white/80">
         <Database className="size-5 shrink-0 text-muted" />
         <span className={`min-w-0 flex-1 truncate text-[15px] ${value ? "" : "text-faint"}`}>{value ? value.split("/").pop() : "Choose a Hugging Face dataset"}</span>
         <Chevron className="size-5 shrink-0 text-muted" />
       </button>
       {open && (
-        <div className="absolute top-full right-0 left-0 z-30 mt-2 rounded-3xl bg-[#2a2a2a] p-3 shadow-[var(--shadow)]">
-          <div className="flex items-center gap-2 rounded-2xl bg-field px-4">
+        <div className="glass-pop absolute top-full right-0 left-0 z-30 mt-2 rounded-3xl p-3">
+          <div className="flex items-center gap-2 rounded-2xl bg-black/[0.05] px-4">
             <Search className="size-4 text-faint" />
             <label htmlFor="dataset-search" className="sr-only">Search Hugging Face datasets</label>
             <input id="dataset-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
@@ -227,7 +227,7 @@ function HubSearch({ value, onPick }: { value: string | null; onPick: (id: strin
             {hits?.map((h) => (
               <li key={h.id}>
                 <button type="button" role="option" aria-selected={h.id === value} onClick={() => pick(h.id)}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-field aria-selected:bg-field">
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-black/[0.05] aria-selected:bg-accent/10">
                   <span className="min-w-0 flex-1 truncate font-mono text-sm">{h.id}</span>
                   <span className="shrink-0 text-xs text-faint">{h.downloads.toLocaleString()} ↓</span>
                 </button>
@@ -256,7 +256,7 @@ function Upload({ onFiles }: { onFiles: (f: File[]) => void }) {
               onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
               onDrop={(e) => { e.preventDefault(); setDragging(false); take(e.dataTransfer.files); }}
               className={`flex h-12 w-full items-center justify-center gap-2.5 rounded-2xl border border-dashed text-[15px] transition ${
-                dragging ? "border-accent bg-accent/10" : "border-[#4a4a4a] hover:bg-field"}`}>
+                dragging ? "border-accent bg-accent/10" : "border-black/15 bg-white/30 hover:bg-white/60"}`}>
         <CloudUp className="size-5 text-muted" /> Drop file or click to upload
       </button>
     </>
@@ -270,9 +270,9 @@ function Preview({ info, draft, onClose }: { info: DatasetInfo | null; draft: Ru
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/15 p-4 backdrop-blur-sm" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Dataset preview" onClick={(e) => e.stopPropagation()}
-           className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] bg-surface shadow-[var(--shadow)]">
+           className="glass-pop flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px]">
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <p className="text-[17px]">{draft?.sample.length ? "Training examples" : "First rows"}</p>
           <button type="button" onClick={onClose} aria-label="Close" className={btn.quiet}><Close className="size-5" /></button>
@@ -282,7 +282,7 @@ function Preview({ info, draft, onClose }: { info: DatasetInfo | null; draft: Ru
             <div className="space-y-3">
               {draft.systemPrompt && <p className="text-sm text-muted">System: {draft.systemPrompt}</p>}
               {draft.sample.map((ex, i) => (
-                <figure key={i} className="rounded-2xl bg-field p-4 text-[15px]">
+                <figure key={i} className="rounded-2xl border border-white/70 bg-white/60 p-4 text-[15px]">
                   <p className="text-xs tracking-[0.08em] text-faint uppercase">User</p>
                   <p className="mt-1 whitespace-pre-wrap">{ex.user}</p>
                   <p className="mt-4 text-xs tracking-[0.08em] text-faint uppercase">Assistant</p>

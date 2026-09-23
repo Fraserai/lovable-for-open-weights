@@ -21,7 +21,7 @@ function sourceKey(s: Source | null, text: string) {
   return JSON.stringify([s.files.map((f) => [f.name, f.size, f.lastModified]), text]);
 }
 
-const METHOD_DOT: Record<string, string> = { qlora: "#22c08f", lora: "#4f8cff", full: "#e0913a", cpt: "#9b7bff" };
+const METHOD_DOT: Record<string, string> = { qlora: "#34c759", lora: "#007aff", full: "#ff9500", cpt: "#af52de" };
 
 export default function Configure({ active, initialDraft, onDraft, onStarted }: {
   active: boolean; initialDraft: string | null; onDraft: (id: string | null) => void; onStarted: (id: string) => void;
@@ -318,7 +318,7 @@ function ConfigCard({ model, settings, source, allModels, onLoad, onReset }: {
     setNote(modelId && !m ? `Loaded the settings; ${modelId} isn't on a connected trainer, so the model is unchanged.` : `Loaded ${f.name}.`);
   };
   return (
-    <Card icon={<FileCog className="size-6" />} tone="#5fb3c9" title="Configuration" subtitle="Save and load configurations">
+    <Card icon={<FileCog className="size-6" />} tone="#30b0c7" title="Configuration" subtitle="Save and load configurations">
       <div className="flex flex-wrap gap-3">
         <input ref={picker} type="file" accept=".yaml,.yml" className="hidden" aria-label="Load configuration" onChange={(e) => { load(e.target.files?.[0]); e.target.value = ""; }} />
         <button type="button" onClick={() => picker.current?.click()} className={btn.ghost}>Load YAML</button>
