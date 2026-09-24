@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadModels } from "@/lib/client";
-import { modelKey, type ModelOption, type Trainer } from "@/lib/models";
+import { modelKey, TRAINERS, type ModelOption, type Trainer } from "@/lib/models";
 import { Check, Chevron, Chip, Search } from "./icons";
 import { Tabs } from "./ui";
 
@@ -25,7 +25,7 @@ export function groupModels(models: ModelOption[]): ModelGroup[] {
   return [...groups.values()];
 }
 
-/** Every way to train the chosen model: its trainer listings, plus Unsloth on a rented GPU for any Hub model. */
+/** Every way to train the chosen model: its trainer listings, plus a rented Hugging Face GPU for any Hub model. */
 export function trainerChoices(value: ModelOption, all: ModelOption[]): ModelOption[] {
   const k = modelKey(value);
   const same = all.filter((m) => modelKey(m) === k);
@@ -41,8 +41,8 @@ export function TrainerBadge({ m }: { m: ModelOption }) {
   if (!m.trainer) return null;
   return (
     <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${m.ready ? "bg-accent/12 text-accent" : "bg-black/5 text-faint"}`}
-          title={m.ready ? `Trains on ${m.trainer}` : `${m.trainer} isn't connected yet`}>
-      {m.trainer}
+          title={m.ready ? `Trains on ${TRAINERS[m.trainer].label}` : `${TRAINERS[m.trainer].label} isn't connected yet`}>
+      {TRAINERS[m.trainer].label}
     </span>
   );
 }
@@ -131,7 +131,7 @@ export default function ModelPicker({ value, onChange, id }: { value: ModelOptio
             {(tab === "trainers" ? trainable : hub) === null && <p className="px-3 py-3 text-sm text-faint">Loading models…</p>}
             {shown.length === 0 && (tab === "trainers" ? trainable : hub) !== null && (
               <p className="px-3 py-3 text-sm text-faint">
-                No match{tab === "trainers" ? ". Try the Hugging Face tab: any open model there trains with Unsloth on a rented GPU." : "."}
+                No match{tab === "trainers" ? ". Try the Hugging Face tab: any open model there trains on a Hugging Face GPU." : "."}
               </p>
             )}
             {shown.map((g) => {
