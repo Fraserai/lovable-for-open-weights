@@ -5,23 +5,48 @@ import { TRAINERS, type Trainer } from "./models";
 
 const auth = (): HeadersInit => (process.env.HF_TOKEN ? { Authorization: `Bearer ${process.env.HF_TOKEN}` } : {});
 
-export type DatasetHit = { id: string; downloads: number };
+export type DatasetSort = "trending" | "downloads" | "likes" | "updated";
 
-/** Hugging Face datasets matching `q`, most downloaded first; with no query, what's trending for text generation. */
-export async function searchDatasets(q: string): Promise<DatasetHit[]> {
+export type DatasetHit = {
+  id: string; downloads: number; likes: number; updated: string | null; gated: boolean;
+  /** Row count band from the dataset card, e.g. "10K–100K" */
+  size: string | null;
+};
+
+/** One page of Hugging Face's dataset catalog, and the cursor for the next page (null at the end). */
+export type DatasetPage = { hits: DatasetHit[]; next: string | null };
+
+const SORT_FIELD: Record<DatasetSort, string> = {
+  trending: "trendingScore", downloads: "downloads", likes: "likes", updated: "lastModified",
+};
+const PAGE = 30;
+
+function sizeBand(tags: string[] = []): string | null {
+  const t = tags.find((x) => x.startsWith("size_categories:"));
+  if (!t) return null;
+  const v = t.slice("size_categories:".length);
+  const m = v.match(/^(\S+)<n<(\S+)$/);
+  return m ? `${m[1]}–${m[2]}` : v.replace("n<", "under ").replace("n>", "over ");
+}
+
+/** Every dataset on Hugging Face, `q` to search, 30 at a time. `cursor` continues where the last page ended. */
+export async function searchDatasets(q: string, sort: DatasetSort = "trending", cursor?: string): Promise<DatasetPage> {
   const url = new URL("https://huggingface.co/api/datasets");
-  if (q) {
-    url.searchParams.set("search", q);
-    url.searchParams.set("sort", "downloads");
-  } else {
-    url.searchParams.set("filter", "task_categories:text-generation");
-    url.searchParams.set("sort", "trendingScore");
-  }
-  url.searchParams.set("limit", "12");
-  const res = await fetch(url, { headers: auth(), next: { revalidate: 3600 } });
-  if (!res.ok) return [];
-  const hits: { id: string; downloads?: number }[] = await res.json();
-  return hits.map((h) => ({ id: h.id, downloads: h.downloads ?? 0 }));
+  if (q) url.searchParams.set("search", q);
+  url.searchParams.set("sort", SORT_FIELD[sort]);
+  url.searchParams.set("limit", String(PAGE));
+  if (cursor) url.searchParams.set("cursor", cursor);
+  const res = await fetch(url, { headers: auth(), next: { revalidate: 600 } });
+  if (!res.ok) return { hits: [], next: null };
+  const rows: { id: string; downloads?: number; likes?: number; lastModified?: string; gated?: unknown; tags?: string[] }[] = await res.json();
+  const next = res.headers.get("link")?.match(/[?&]cursor=([^&>]+)[^>]*>;\s*rel="next"/)?.[1] ?? null;
+  return {
+    hits: rows.map((r) => ({
+      id: r.id, downloads: r.downloads ?? 0, likes: r.likes ?? 0, updated: r.lastModified ?? null,
+      gated: !!r.gated && r.gated !== "false", size: sizeBand(r.tags),
+    })),
+    next: next && decodeURIComponent(next),
+  };
 }
 
 export type DatasetInfo = {

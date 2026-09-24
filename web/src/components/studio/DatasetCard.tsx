@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatBytes } from "@/lib/client";
-import type { DatasetHit, DatasetInfo } from "@/lib/hub";
+import type { DatasetHit, DatasetInfo, DatasetPage, DatasetSort } from "@/lib/hub";
 import { ACCEPTED_FILES } from "@/lib/models";
 import type { RunStatus } from "@/lib/runs";
 import { Chevron, Close, CloudUp, Database, Doc, Eye, Hug, Search } from "../icons";
-import { btn, Card, Dot, ErrorNote, input, Label, Pill, Select } from "../ui";
+import { btn, Card, Dot, ErrorNote, input, Label, Pill, Select, Tabs } from "../ui";
 
 export type Source =
   | { kind: "hub"; id: string; config?: string; split?: string; limit: number; userField?: string; assistantField?: string }
@@ -208,31 +208,65 @@ const READY_BADGE: Record<Readiness, { label: string; tone: string; title: strin
   unreadable: { label: "Can't preview", tone: "bg-black/5 text-faint", title: "Hugging Face's viewer can't read it (gated, private or not a table)." },
 };
 
-/** The DATASET box: trending text datasets when empty, Hub search as you type, or paste owner/name.
- * Each result is checked in the background and labelled Ready, Needs mapping or Can't preview. */
+const SORTS: { value: DatasetSort; label: string }[] = [
+  { value: "trending", label: "Trending" }, { value: "downloads", label: "Downloads" },
+  { value: "likes", label: "Likes" }, { value: "updated", label: "Recent" },
+];
+
+const compact = (n: number) => Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+
+/** The DATASET box: every dataset on Hugging Face, searchable and sortable, loading more as you scroll.
+ * Rows are checked as they come into view and labelled Ready, Needs mapping or Can't preview. */
 function HubSearch({ value, onPick }: { value: string | null; onPick: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<DatasetSort>("trending");
   const [hits, setHits] = useState<DatasetHit[] | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [ready, setReady] = useState<Record<string, Readiness>>({});
   const root = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
 
-  useEffect(() => {
-    let alive = true;
-    for (const h of hits ?? []) checkReady(h.id).then((r) => alive && setReady((all) => (all[h.id] === r ? all : { ...all, [h.id]: r })));
-    return () => { alive = false; };
-  }, [hits]);
-
+  // First page whenever the search or sort changes
   useEffect(() => {
     if (!open) return;
-    const q = query.trim();
     const ctrl = new AbortController();
     const t = setTimeout(() => {
-      fetch(`/api/datasets?q=${encodeURIComponent(q.length === 1 ? "" : q)}`, { signal: ctrl.signal })
-        .then((r) => r.json()).then(setHits).catch(() => {});
+      fetch(`/api/datasets?q=${encodeURIComponent(query.trim())}&sort=${sort}`, { signal: ctrl.signal })
+        .then((r) => r.json()).then((page: DatasetPage) => { setHits(page.hits); setNext(page.next); list.current?.scrollTo({ top: 0 }); })
+        .catch(() => {});
     }, 250);
     return () => { clearTimeout(t); ctrl.abort(); };
-  }, [query, open]);
+  }, [query, sort, open]);
+
+  const loadMore = async () => {
+    if (!next || loadingMore) return;
+    setLoadingMore(true);
+    const page: DatasetPage | null = await fetch(`/api/datasets?q=${encodeURIComponent(query.trim())}&sort=${sort}&cursor=${encodeURIComponent(next)}`)
+      .then((r) => r.json()).catch(() => null);
+    if (page) {
+      setHits((h) => [...(h ?? []), ...page.hits.filter((x) => !(h ?? []).some((y) => y.id === x.id))]);
+      setNext(page.next);
+    }
+    setLoadingMore(false);
+  };
+
+  // Check each row once it's on screen (every row would be hundreds of requests)
+  useEffect(() => {
+    const el = list.current;
+    if (!open || !el) return;
+    const seen = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const id = (e.target as HTMLElement).dataset.id;
+        if (!e.isIntersecting || !id) continue;
+        seen.unobserve(e.target);
+        checkReady(id).then((r) => setReady((all) => (all[id] === r ? all : { ...all, [id]: r })));
+      }
+    }, { root: el });
+    el.querySelectorAll("[data-id]").forEach((row) => seen.observe(row));
+    return () => seen.disconnect();
+  }, [hits, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -254,31 +288,49 @@ function HubSearch({ value, onPick }: { value: string | null; onPick: (id: strin
         <Chevron className="size-5 shrink-0 text-muted" />
       </button>
       {open && (
-        <div className="glass-pop absolute top-full right-0 left-0 z-30 mt-2 rounded-3xl p-3">
+        <div className="glass-pop absolute top-full left-0 z-30 mt-2 w-[min(640px,calc(100vw-2rem))] rounded-3xl p-3">
           <div className="flex items-center gap-2 rounded-2xl bg-black/[0.05] px-4">
             <Search className="size-4 text-faint" />
             <label htmlFor="dataset-search" className="sr-only">Search Hugging Face datasets</label>
             <input id="dataset-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
                    onKeyDown={(e) => { if (e.key === "Enter" && /^[\w.-]+\/[\w.-]+$/.test(query.trim())) pick(query.trim()); }}
-                   placeholder="Search or paste owner/name…" className="h-11 w-full bg-transparent text-[15px] outline-none placeholder:text-faint" />
+                   placeholder="Search all of Hugging Face, or paste owner/name…" className="h-11 w-full bg-transparent text-[15px] outline-none placeholder:text-faint" />
           </div>
-          <p className="px-3 pt-3 pb-1 text-xs text-faint">{query.trim().length > 1 ? "Hugging Face" : "Trending for text generation"}</p>
-          <ul role="listbox" aria-label="Datasets" className="max-h-72 overflow-y-auto">
+          <div className="mt-3 flex flex-wrap items-center gap-2 px-1">
+            <Tabs label="Sort datasets" value={sort} onChange={setSort} options={SORTS} />
+            <span className="ml-auto text-xs text-faint">
+              {hits === null ? "" : `${hits.length.toLocaleString()} shown${next ? ", more as you scroll" : ""}`}
+            </span>
+          </div>
+          <ul ref={list} role="listbox" aria-label="Datasets" className="mt-2 max-h-[min(24rem,50vh)] overflow-y-auto"
+              onScroll={(e) => { const el = e.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) loadMore(); }}>
             {hits === null && <li className="px-3 py-2 text-sm text-faint">Loading…</li>}
             {hits?.length === 0 && <li className="px-3 py-2 text-sm text-faint">No match. Paste the full owner/name and press Enter.</li>}
             {hits?.map((h) => (
-              <li key={h.id}>
+              <li key={h.id} data-id={h.id}>
                 <button type="button" role="option" aria-selected={h.id === value} onClick={() => pick(h.id)}
                         disabled={ready[h.id] === "unreadable"} title={ready[h.id] && READY_BADGE[ready[h.id]].title}
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left enabled:hover:bg-black/[0.05] disabled:cursor-default disabled:opacity-50 aria-selected:bg-accent/10">
-                  <span className="min-w-0 flex-1 truncate font-mono text-sm">{h.id}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-mono text-sm">{h.id}</span>
+                    <span className="block truncate text-[11px] text-faint">
+                      {[h.size && `${h.size} rows`, h.gated && "gated", `${compact(h.likes)} likes`].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
                   {ready[h.id]
                     ? <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${READY_BADGE[ready[h.id]].tone}`}>{READY_BADGE[ready[h.id]].label}</span>
                     : <span className="shrink-0 text-[11px] text-faint">checking…</span>}
-                  <span className="w-16 shrink-0 text-right text-xs text-faint">{h.downloads.toLocaleString()} ↓</span>
+                  <span className="w-14 shrink-0 text-right text-xs text-faint">{compact(h.downloads)} ↓</span>
                 </button>
               </li>
             ))}
+            {next && (
+              <li className="px-3 py-2">
+                <button type="button" onClick={loadMore} disabled={loadingMore} className={`${btn.quiet} w-full justify-center`}>
+                  {loadingMore ? <><Dot /> Loading more…</> : "Load more"}
+                </button>
+              </li>
+            )}
           </ul>
         </div>
       )}
