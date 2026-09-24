@@ -462,7 +462,7 @@ def _train_unsloth(run_dir: Path, state: dict, yes: bool, held_out: Optional[Pat
         raise typer.Exit(1)
 
     typer.echo(
-        f"Base model:    {unsloth.hf_id(state['base_model'])} (Unsloth on a Hugging Face {p['gpu']})\n"
+        f"Base model:    {unsloth.hf_id(state['base_model'])} (Hugging Face {p['gpu']} GPU)\n"
         f"Examples:      {p['examples']:,} x {p['epochs']} epoch(s) = {p['steps']} steps, ~{p['tokens']:,} training tokens\n"
         f"Settings:      LoRA rank {p['lora_rank']}, learning rate {p['learning_rate']:.2e}, 16-bit\n"
         f"Cost:          ${p['per_hour']}/hr, billed by the second; at most ${p['max_cost']:.2f} "

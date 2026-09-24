@@ -36,7 +36,7 @@ export const TRAINERS: Record<Trainer, { label: string; runsOn: string; billing:
     env: "FIREWORKS_API_KEY",
   },
   Unsloth: {
-    label: "Unsloth on Hugging Face",
+    label: "Hugging Face",
     runsOn: "A GPU on your Hugging Face account",
     billing: "per second of GPU time",
     env: "HF_TOKEN",

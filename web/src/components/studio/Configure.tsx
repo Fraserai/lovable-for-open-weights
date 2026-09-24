@@ -207,7 +207,7 @@ export default function Configure({ active, initialDraft, onDraft, onStarted }: 
         <Card icon={<Brain className="size-6" />} title="Model" subtitle="Select model and training method">
           <div className="grid gap-5 @3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.1fr)] @xl:grid-cols-2">
             <div className="@xl:col-span-2 @3xl:col-span-1">
-              <Label upper hint="Any open model. The Trainers tab lists models our trainers can tune; the Hugging Face tab finds any other, trained with Unsloth on a rented GPU." htmlFor="model">Model</Label>
+              <Label upper hint="Any open model. The Trainers tab lists models our trainers can tune; the Hugging Face tab finds any other, trained on a GPU rented from Hugging Face." htmlFor="model">Model</Label>
               <ModelPicker id="model" value={model} onChange={pickModel} />
             </div>
             <div>
@@ -215,7 +215,7 @@ export default function Configure({ active, initialDraft, onDraft, onStarted }: 
               <Select id="method" value={method} lead={<span className="block size-2.5 rounded-full" style={{ background: METHOD_DOT[method] }} />}
                       onChange={(v) => setSettings((s) => ({ ...s, method: v === "lora" ? undefined : (v as "qlora") }))}
                       options={[
-                        { value: "qlora", label: `QLoRA${trainer && METHODS[trainer].has("qlora") ? "" : " (Unsloth only)"}`, disabled: !trainer || !METHODS[trainer].has("qlora") },
+                        { value: "qlora", label: `QLoRA${trainer && METHODS[trainer].has("qlora") ? "" : " (Hugging Face only)"}`, disabled: !trainer || !METHODS[trainer].has("qlora") },
                         { value: "lora", label: "LoRA" },
                         { value: "full", label: "Full fine-tune (with Together, next)", disabled: true },
                         { value: "cpt", label: "Continued pretraining (not yet)", disabled: true },
