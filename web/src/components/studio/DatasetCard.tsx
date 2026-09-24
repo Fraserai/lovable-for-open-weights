@@ -25,6 +25,12 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
   draft: RunStatus | null;
 }) {
   const [infoError, setInfoError] = useState<string | null>(null);
+  const [writer, setWriter] = useState<"openrouter" | "openai" | null>(null);
+  const docs = isDocs(source);
+  useEffect(() => {
+    if (!docs || writer) return;
+    fetch("/api/writer").then((r) => r.json()).then((b) => setWriter(b.provider)).catch(() => {});
+  }, [docs, writer]);
   const [advanced, setAdvanced] = useState(false);
   const [viewing, setViewing] = useState(false);
 
@@ -102,6 +108,12 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
           <textarea id="docs-goal" rows={2} value={docsGoal} onChange={(e) => onDocsGoal(e.target.value)}
                     placeholder="e.g. Answer member questions about our PDS and insurance terms, and stay inside general advice"
                     className={`${input} h-auto resize-y py-3 leading-relaxed`} />
+          {writer === "openai" && (
+            <p className="mt-3 rounded-2xl bg-amber-400/15 px-4 py-3 text-sm text-amber-900">
+              Examples are written by OpenAI on this setup, which can keep data for up to 30 days. Use test or public
+              documents only, or set <code className="font-mono">GENERATOR_PROVIDER=openrouter</code> in .env for zero data retention.
+            </p>
+          )}
         </div>
       )}
 

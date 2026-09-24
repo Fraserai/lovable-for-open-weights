@@ -490,7 +490,8 @@ export async function startScore(id: string, frontier: string | null): Promise<v
   await record("running", { pid });
 }
 
-/** Rough dollars for a frontier model to answer this run's held-back questions (OpenRouter's list prices). */
+/** The most a frontier model can cost to answer this run's held-back questions (OpenRouter's list prices,
+ * every answer at full length; real answers are usually shorter). */
 export async function frontierEstimate(id: string, model: string): Promise<number | null> {
   const test = await readOr(path.join(runDir(id), "test.jsonl"), (t) => t, "");
   const rows = test.split("\n").filter(Boolean);

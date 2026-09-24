@@ -19,6 +19,7 @@ export default function Scorecard({ run, bump }: { run: RunStatus; bump: () => v
   const [error, setError] = useState<string | null>(null);
   const scoring = run.scoring.state === "running" || starting;
   const trainer = trainerOf(run.baseModel) as Trainer | null;
+  const before = run.train.state === "waiting" || run.train.state === "failed"; // scoring the gap before training
   const name = (id: string | null) => FRONTIERS.find((f) => f.id === id)?.name ?? id ?? "";
 
   useEffect(() => {
@@ -92,7 +93,7 @@ export default function Scorecard({ run, bump }: { run: RunStatus; bump: () => v
             </div>
           )}
 
-          <div className="flex flex-wrap items-end gap-3 border-t border-black/5 pt-5">
+          <div className={`flex flex-wrap items-end gap-3 ${rows.length ? "border-t border-black/5 pt-5" : ""}`}>
             <div className="min-w-[14rem] flex-1">
               <label htmlFor="frontier" className="mb-2 block text-[15px] text-muted">Compare against</label>
               <Select id="frontier" value={frontier} onChange={setFrontier} disabled={scoring}
@@ -103,9 +104,11 @@ export default function Scorecard({ run, bump }: { run: RunStatus; bump: () => v
             </button>
           </div>
           <p className="-mt-3 text-xs text-faint">
-            {trainer === "Tinker" ? `Tinker answers as the original and your model` : trainer === "Unsloth" ? "Your Hugging Face GPU run already scored the original and yours" : `${trainer ? TRAINERS[trainer].label : "This trainer"} models can't answer here yet`}
-            {frontier !== NONE && `; ${name(frontier)} costs about ${estimate != null ? money(estimate) : "a little"}`}.
-            {!run.train.canChat && trainer === "Tinker" && " Score now to see the gap before you train."}
+            {trainer === "Tinker" ? (before ? "Tinker answers as the original model" : "Tinker answers as the original and your model")
+              : trainer === "Unsloth" ? (before ? "The original is scored on the GPU during training" : "Your Hugging Face GPU run already scored the original and yours")
+              : `${trainer ? TRAINERS[trainer].label : "This trainer"} models can't answer here yet`}
+            {frontier !== NONE && `; ${name(frontier)} costs ${estimate != null ? `up to ${money(estimate)}` : "a little"}`}.
+            {before && " See the gap before you pay to train."}
             {!run.sourceInfo?.hf && frontier !== NONE && " Your data goes to zero-data-retention hosts only."}
           </p>
           {(error || run.scoring.error) && <ErrorNote>{error ?? run.scoring.error}</ErrorNote>}

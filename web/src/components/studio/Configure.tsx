@@ -12,6 +12,7 @@ import ModelPicker, { trainerChoices } from "../ModelPicker";
 import { btn, Card, Dot, Label, Select } from "../ui";
 import DatasetCard, { isDocs, type Source } from "./DatasetCard";
 import ParamsCard from "./ParamsCard";
+import Scorecard from "./Scorecard";
 import RunPreview, { type PreviewState } from "./RunPreview";
 
 /** Identifies what a draft was built from, so a change re-imports and nothing else does. */
@@ -44,7 +45,7 @@ export default function Configure({ active, initialDraft, onDraft, onStarted }: 
   const [planError, setPlanError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const { run: draft } = useRun(draftId);
+  const { run: draft, bump: bumpDraft } = useRun(draftId);
 
   useEffect(() => {
     loadModels().then(setAllModels);
@@ -301,6 +302,9 @@ export default function Configure({ active, initialDraft, onDraft, onStarted }: 
                      draft={key === importedKey ? draft : null} />
 
         <ParamsCard s={settings} set={(patch) => setSettings((s) => ({ ...s, ...patch }))} trainer={trainer} plan={currentPlan} />
+
+        {/* Benchmark first: the original model against the frontier on the held-back questions, before paying to train */}
+        {prepared && draft?.testRows ? <Scorecard run={draft} bump={() => bumpDraft()} /> : null}
 
         <ConfigCard model={model} settings={settings} source={source} allModels={allModels}
                     onLoad={(m, s, hub) => { if (m) pickModel(m); setSettings(s); if (hub) changeSource(hub); }}

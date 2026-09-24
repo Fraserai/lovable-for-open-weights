@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Annotated, Optional
 
+import httpx
 import typer
 
 from . import config, holdout, settings
@@ -34,6 +35,18 @@ def _load(run_dir: Path) -> dict:
 
 def _save(run_dir: Path, state: dict) -> None:
     (run_dir / "run.json").write_text(json.dumps(state, indent=2))
+
+
+def _writer_error(status: int, provider: str) -> str:
+    """One line the page can show when the example writer's API refuses (see runs.ts lastError)."""
+    name, key = ("OpenAI", "OPENAI_API_KEY") if provider == "openai" else ("OpenRouter", "OPENROUTER_API_KEY")
+    if status in (401, 403):
+        return f"The example writer ({name}) rejected its API key. Check {key} in .env."
+    if status == 402:
+        return f"The example writer ({name}) is out of credit. Add some, then try again."
+    if status == 429:
+        return f"The example writer ({name}) is rate-limiting requests. Try again in a minute."
+    return f"The example writer ({name}) answered {status}. Try again in a minute."
 
 
 def _hold_out(run_dir: Path, enabled: bool) -> int:
@@ -115,7 +128,15 @@ def prepare(
                 return await generate_rows(gen, chunks, goal, per_chunk, on_progress=lambda: bar.update(1))
             finally:
                 await gen.aclose()
-        system_prompt, rows, errors = asyncio.run(go())
+        try:
+            system_prompt, rows, errors = asyncio.run(go())
+        except httpx.HTTPStatusError as e:
+            typer.echo()
+            typer.secho(_writer_error(e.response.status_code, provider), fg="red", err=True)
+            raise typer.Exit(1)
+    if not rows:
+        typer.secho(f"No examples were written: {errors[0] if errors else 'the writer returned nothing'}", fg="red", err=True)
+        raise typer.Exit(1)
 
     run_dir.mkdir(parents=True, exist_ok=True)
     out = run_dir / "train.jsonl"
