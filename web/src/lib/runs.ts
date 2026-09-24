@@ -3,8 +3,9 @@ import "server-only";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { toWorker, type Settings } from "./settings";
 
 // The dev server runs from web/; the worker and runs/ folder sit beside it.
 const ROOT = path.resolve(process.cwd(), "..");
@@ -15,6 +16,8 @@ const RUNS = path.join(ROOT, "runs");
 // worker's editable install (fixed in worker/pyproject.toml). Naming the source directory outright
 // means a broken install record can't take the app down again.
 const WORKER_ENV = { PYTHONPATH: path.join(WORKER, "src"), NO_COLOR: "1" };
+
+const MAX_POINTS = 400;
 
 // First pass keeps generator spend small; raise once the loop is proven.
 const FIRST_PASS_CHUNKS = "20";
@@ -29,6 +32,13 @@ export type TrainPlan = {
   steps: number;
   tokens: number;
   lora_rank: number;
+  learning_rate: number | null;
+  batch_size: number;
+  grad_accum: number;
+  lr_scheduler: string | null;
+  max_length?: number | null;
+  /** Settings the chosen trainer can't honour (worker settings.split) */
+  ignored: string[];
   est_cost: number | null;
   rate_per_million: number | null;
   // Unsloth: a rented GPU billed by the second; the job's time limit caps the bill at max_cost
@@ -50,6 +60,22 @@ export type TrainProgress = {
   epochs: number | null;
   loraRank: number | null;
   jobUrl: string | null;
+  /** One point per logged step, thinned to at most MAX_POINTS for the charts. */
+  metrics: { step: number; loss: number; lr: number | null }[];
+  elapsedSec: number | null;
+};
+
+
+/** A dataset on the Hugging Face Hub, imported as-is (no generator). */
+export type HubSource = {
+  id: string; config?: string; split?: string; limit: number; userField?: string; assistantField?: string;
+};
+
+export type RunSummary = {
+  id: string; goal: string | null; baseModel: string | null; rows: number | null;
+  state: "preparing" | "ready" | "training" | "trained" | "failed"; updated: number;
+  /** Training was started (drafts that were only checked are not) */
+  started: boolean;
 };
 
 export type RunStatus = {
@@ -57,6 +83,10 @@ export type RunStatus = {
   goal: string | null;
   baseModel: string | null;
   source: "documents" | "dataset";
+  /** The Hub dataset or file the examples came from, when imported as-is */
+  sourceLabel: string | null;
+  /** How the examples were imported (dataset runs): Hub id, subset, split, row limit, column mapping */
+  sourceInfo: { hf: string | null; config: string | null; split: string | null; limit: number | null } | null;
   files: { name: string; size: number }[];
   status: "running" | "done" | "failed";
   stages: { read: Stage; write: Stage; check: Stage };
@@ -67,9 +97,11 @@ export type RunStatus = {
   systemPrompt: string | null;
   sample: { user: string; assistant: string }[];
   report: string[];
+  settings: Settings;
 };
 
-type WebState = { status: RunStatus["status"]; exitCode: number | null; startedAt: string };
+// goal/baseModel: known before the worker writes run.json, so a preparing run can be shown
+type WebState = { status: RunStatus["status"]; exitCode: number | null; startedAt: string; goal?: string; baseModel?: string };
 
 const ID = /^[a-z0-9][a-z0-9-]{1,40}$/;
 
@@ -88,7 +120,7 @@ export function safeFileName(name: string) {
   return base && !base.startsWith(".") ? base : `upload-${randomBytes(3).toString("hex")}`;
 }
 
-export async function startPrepare(id: string, goal: string, baseModel: string, files: File[]) {
+export async function startPrepare(id: string, goal: string, baseModel: string, files: File[], hub?: HubSource) {
   const dir = runDir(id);
   const uploads = path.join(dir, "uploads");
   await mkdir(uploads, { recursive: true });
@@ -96,17 +128,19 @@ export async function startPrepare(id: string, goal: string, baseModel: string, 
     await writeFile(path.join(uploads, safeFileName(f.name)), Buffer.from(await f.arrayBuffer()));
   }
 
-  const state: WebState = { status: "running", exitCode: null, startedAt: new Date().toISOString() };
+  const state: WebState = { status: "running", exitCode: null, startedAt: new Date().toISOString(), goal, baseModel };
   await writeFile(path.join(dir, "web.json"), JSON.stringify(state));
 
   // A ready-made dataset trains as-is; documents have to be read and turned into examples first.
   const datasets = files.filter((f) => f.name.toLowerCase().endsWith(".jsonl"));
-  const isDataset = datasets.length === files.length;
-  const args = isDataset
-    ? ["dataset", "--run", id, "--goal", goal, "--base-model", baseModel,
-       "--file", path.join(uploads, safeFileName(datasets[0].name))]
-    : ["prepare", uploads, "--goal", goal, "--run", id, "--base-model", baseModel,
-       "--max-chunks", FIRST_PASS_CHUNKS];
+  const common = ["--run", id, "--goal", goal, "--base-model", baseModel];
+  const args = hub
+    ? ["dataset", ...common, "--hf", hub.id, "--limit", String(hub.limit),
+       ...(hub.config ? ["--config", hub.config] : []), ...(hub.split ? ["--split", hub.split] : []),
+       ...(hub.userField && hub.assistantField ? ["--user-field", hub.userField, "--assistant-field", hub.assistantField] : [])]
+    : datasets.length === files.length
+    ? ["dataset", ...common, "--file", path.join(uploads, safeFileName(datasets[0].name))]
+    : ["prepare", uploads, ...common, "--max-chunks", FIRST_PASS_CHUNKS];
 
   const log = createWriteStream(path.join(dir, "prepare.log"));
   // Args array, no shell: user text can't be interpreted as a command.
@@ -147,12 +181,28 @@ export async function getPlan(id: string): Promise<TrainPlan> {
   return JSON.parse(await worker(["plan", "--run", id, "--json"]));
 }
 
+/** Sets the model and the Parameters card's settings on a prepared run, then returns the new plan. Spends nothing. */
+export async function configure(id: string, baseModel: string, settings: Settings): Promise<TrainPlan> {
+  runDir(id);
+  await worker(["configure", "--run", id, "--base-model", baseModel, "--json", JSON.stringify(toWorker(settings))]);
+  return getPlan(id);
+}
+
+/** Removes a run that never started training (a dataset picked, then replaced). */
+export async function deleteDraft(id: string): Promise<boolean> {
+  const dir = runDir(id);
+  const run = await readOr<Record<string, unknown> | null>(path.join(dir, "run.json"), JSON.parse, null);
+  if (run?.job_state || run?.job) return false;
+  await rm(dir, { recursive: true, force: true });
+  return true;
+}
+
 /** Starts the paid training run in the background; progress is read back by getStatus. */
 export async function startTraining(id: string): Promise<void> {
   const dir = runDir(id);
   const log = createWriteStream(path.join(dir, "train.log"), { flags: "a" });
   const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", "train", "--run", id, "--yes"],
-    { env: { ...process.env, PYTHONUNBUFFERED: "1", NO_COLOR: "1" } });
+    { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } });
   child.stdout.pipe(log);
   child.stderr.pipe(log);
   child.on("error", (e) => log.write(`\nCould not start the trainer: ${e.message}\n`));
@@ -163,8 +213,20 @@ async function trainProgress(dir: string, run: Record<string, unknown> | null): 
   const unsloth = run?.job === "unsloth";
   const plan = ((unsloth ? run?.unsloth_plan : run?.tinker_plan) ?? {}) as { steps?: number; epochs?: number; lora_rank?: number };
   const metricsFile = unsloth ? path.join(dir, "unsloth", "metrics.jsonl") : path.join(dir, "tinker", "logs", "metrics.jsonl");
-  const metrics = await readOr(metricsFile, (s) => s, "");
-  const steps = metrics.split("\n").filter(Boolean).length;
+  const lines = (await readOr(metricsFile, (s) => s, "")).split("\n").filter(Boolean);
+  const steps = lines.length;
+  const points = lines.flatMap((l) => {
+    try {
+      const m = JSON.parse(l);
+      // Tinker logs mean per-token loss as train_mean_nll; Unsloth logs the trainer's loss
+      const loss = m.train_mean_nll ?? m.loss;
+      return typeof loss === "number" ? [{ step: m.step as number, loss, lr: m.learning_rate ?? null, sec: m["time/step"] ?? null }] : [];
+    } catch {
+      return [];
+    }
+  });
+  const stride = Math.ceil(points.length / MAX_POINTS);
+  const secs = points.map((p) => p.sec).filter((x): x is number => typeof x === "number");
   const state: TrainProgress["state"] =
     jobState === "JOB_STATE_COMPLETED" ? "done"
     : jobState === "JOB_STATE_FAILED" ? "failed"
@@ -183,6 +245,8 @@ async function trainProgress(dir: string, run: Record<string, unknown> | null): 
     epochs: typeof run?.epochs === "number" ? run.epochs : (plan as { epochs?: number }).epochs ?? null,
     loraRank: typeof run?.lora_rank === "number" ? run.lora_rank : (plan as { lora_rank?: number }).lora_rank ?? null,
     jobUrl: typeof run?.job_url === "string" ? run.job_url : null,
+    metrics: points.filter((_, i) => i % stride === 0 || i === points.length - 1).map(({ step, loss, lr }) => ({ step, loss, lr })),
+    elapsedSec: secs.length ? Math.round(secs.reduce((a, b) => a + b, 0)) : null,
   };
 }
 
@@ -254,9 +318,13 @@ export async function getStatus(id: string): Promise<RunStatus | null> {
 
   return {
     id,
-    goal: typeof run?.goal === "string" ? run.goal : null,
-    baseModel: typeof run?.base_model === "string" ? run.base_model : null,
+    goal: typeof run?.goal === "string" ? run.goal : web.goal ?? null,
+    baseModel: typeof run?.base_model === "string" ? run.base_model : web.baseModel ?? null,
     source: fromDataset || (run && typeof run.source === "object") ? "dataset" : "documents",
+    sourceLabel: (() => {
+      const src = run?.source as { hf?: string | null; file?: string | null } | undefined;
+      return src?.hf ?? (src?.file ? path.basename(src.file) : null);
+    })(),
     files,
     status: web.status,
     stages: { read, write, check },
@@ -267,5 +335,38 @@ export async function getStatus(id: string): Promise<RunStatus | null> {
     systemPrompt: typeof run?.system_prompt === "string" ? run.system_prompt : null,
     sample,
     report,
+    settings: {
+      // Saved before settings lived under "settings" (worker settings.load folds these in the same way)
+      ...(typeof run?.train_epochs === "number" ? { epochs: run.train_epochs } : {}),
+      ...(typeof run?.train_lora_rank === "number" ? { lora_rank: run.train_lora_rank } : {}),
+      ...(typeof run?.learning_rate === "number" ? { learning_rate: run.learning_rate } : {}),
+      ...((run?.settings ?? {}) as Settings),
+    },
+    sourceInfo: run && typeof run.source === "object" && run.source
+      ? (({ hf, config, split, limit }) => ({ hf, config, split, limit }))(run.source as Record<string, never>)
+      : null,
   };
+}
+
+/** Every run, newest first, for History and the sidebar. */
+export async function listRuns(): Promise<RunSummary[]> {
+  const names = await readdir(RUNS).catch(() => [] as string[]);
+  const all = await Promise.all(names.filter((n) => ID.test(n)).map(async (id): Promise<RunSummary | null> => {
+    const dir = path.join(RUNS, id);
+    const run = await readOr<Record<string, unknown> | null>(path.join(dir, "run.json"), JSON.parse, null);
+    const web = await readOr<WebState | null>(path.join(dir, "web.json"), JSON.parse, null);
+    if (!run && !web) return null;
+    const updated = await stat(path.join(dir, run ? "run.json" : "web.json")).then((s) => s.mtimeMs, () => 0);
+    const job = typeof run?.job_state === "string" ? run.job_state : null;
+    const state: RunSummary["state"] =
+      job === "JOB_STATE_COMPLETED" ? "trained" : job === "JOB_STATE_FAILED" ? "failed" : job ? "training"
+      : run ? "ready" : web?.status === "failed" ? "failed" : "preparing";
+    return {
+      id, updated, state, started: !!job,
+      goal: typeof run?.goal === "string" ? run.goal : web?.goal ?? null,
+      baseModel: typeof run?.base_model === "string" ? run.base_model : web?.baseModel ?? null,
+      rows: typeof run?.rows === "number" ? run.rows : null,
+    };
+  }));
+  return all.filter((r): r is RunSummary => r !== null).sort((a, b) => b.updated - a.updated);
 }

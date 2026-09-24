@@ -153,28 +153,34 @@ def truncated_share(dataset: Path, base_model: str, max_length: int, sample: int
     return over / seen if seen else 0.0
 
 
-def plan(train_jsonl: Path, work_dir: Path, base_model: str, learning_rate: float | None = None) -> dict:
+def plan(train_jsonl: Path, work_dir: Path, base_model: str, s: dict | None = None) -> dict:
     """Everything decided before any money is spent. Also refuses unverified models.
 
-    `learning_rate` overrides the default for families Tinker hasn't calibrated.
+    `s` holds the Train page's settings this trainer honours (settings.SUPPORTED["tinker"]);
+    anything unset is sized for the data here.
     """
+    s = s or {}
     ensure_ssl_certificates()
     renderer = resolve_renderer(base_model)
     work_dir.mkdir(parents=True, exist_ok=True)
     expanded = work_dir / "train.expanded.jsonl"
     examples = expand_per_assistant_turn(train_jsonl, expanded)
-    batch = min(BATCH_SIZE, examples)  # the builder drops a trailing partial batch
-    epochs = resolve_epochs(examples, batch)
-    max_length = resolve_sequence_length(base_model)
+    batch = min(s.get("batch_size") or BATCH_SIZE, examples)  # the builder drops a trailing partial batch
+    per_epoch = max(1, examples // batch)
+    max_steps = s.get("max_steps")
+    epochs = -(-max_steps // per_epoch) if max_steps else s.get("epochs") or resolve_epochs(examples, batch)
+    max_length = min(s.get("context_length") or 1 << 30, resolve_sequence_length(base_model))
     return {
         "renderer": renderer,
         "dataset": str(expanded),
         "examples": examples,
         "batch_size": batch,
         "epochs": epochs,
-        "steps": (examples // batch) * epochs,
-        "learning_rate": learning_rate or resolve_learning_rate(base_model),
-        "lora_rank": LORA_RANK,
+        "steps": min(per_epoch * epochs, max_steps or per_epoch * epochs),
+        "max_steps": max_steps,
+        "learning_rate": s.get("learning_rate") or resolve_learning_rate(base_model),
+        "lr_scheduler": s.get("lr_scheduler") or "linear",
+        "lora_rank": s.get("lora_rank") or LORA_RANK,
         "max_length": max_length,
         "truncated_share": truncated_share(expanded, base_model, max_length),
     }
@@ -211,7 +217,9 @@ def train(work_dir: Path, base_model: str, p: dict, on_progress: Progress = prin
         renderer_name=p["renderer"],
         dataset_builder=builder,
         learning_rate=p["learning_rate"],
+        lr_schedule=p.get("lr_scheduler", "linear"),
         num_epochs=p["epochs"],
+        max_steps=p.get("max_steps"),
         lora_rank=p["lora_rank"],
         save_every=CHECKPOINT_EVERY_N_STEPS,
         eval_every=0,

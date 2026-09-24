@@ -1,5 +1,8 @@
 # Lovable for Open Models
 
+**We're the shovel that lets anyone, and any business, build and own their own intelligence.**
+From Models to Moats. See [BRAND.md](BRAND.md).
+
 A chat-first way to customise open model weights: pick any open model, bring your documents or a
 dataset, say what the model should do, and get back weights you own. Product brief: [CLAUDE.md](CLAUDE.md).
 
@@ -21,6 +24,7 @@ also be run from the terminal.
 |---|---|---|
 | Turn documents into training examples | `trainloop prepare` | Docling + OpenRouter (zero data retention) or OpenAI (test only) |
 | Or use a ready-made dataset | `trainloop dataset` | Your `.jsonl`, or a Hugging Face dataset |
+| Choose model, trainer and settings | `trainloop configure` | Free |
 | See what training will cost | `trainloop plan` | Free |
 | Train | `trainloop train` | Fireworks (`accounts/...` models), Tinker (Hugging Face ids) or Unsloth on Hugging Face GPUs (`unsloth:<id>`) |
 | Take the model home | `trainloop fetch --hf-repo you/name` | Download + private Hugging Face repo |
@@ -51,8 +55,12 @@ Never paste keys into chat or commit `.env`; it is git-ignored.
   First run queued: `banking77-unsloth` (Qwen3.5-4B, at most $1.00) against Tinker's 82.5%.
 - **Fireworks:** key, account and a real dataset upload verified live (GLM-5.3-Flash is
   supervised-LoRA tunable on the account). Training not yet run: the account has no credit.
-- **Page:** upload documents or a dataset, model picker (64 trainable models + Hugging Face
-  search), write examples, review cost, train with live progress, talk to your model side by side
-  with the original, take it home to a private Hugging Face repo, reopen any run at `/runs/<id>`.
+- **App (2026-09-24):** one page, the **Train** screen, laid out like Unsloth Studio's but running on our
+  cloud trainers. Tabs: **Configure** (Model card: any model, method, trainer; Dataset card: any Hugging Face
+  dataset or an upload, subset/split, column mapping, preview; Parameters: Simple/Advanced with every
+  Unsloth control, greyed with "Not supported on <trainer>" where a trainer can't honour it; Save/Load YAML;
+  a Run preview rail with steps, batch, context, LR, trainer, where it runs and the cost, re-planned live),
+  **Current Run** (progress, loss and LR charts, publish to Hugging Face) and **History**. Which trainer takes
+  which setting lives in `worker/src/trainloop/settings.py` (mirrored in `web/src/lib/settings.ts`).
 - **Not production-ready:** no login, and training runs as a process of the dev server, so stopping
   the server stops training. Needs a real job runner (see CLAUDE.md) before customers.
