@@ -6,7 +6,7 @@ import { TRAINERS, type Trainer } from "@/lib/models";
 import type { RunStatus } from "@/lib/runs";
 import Chart from "../Chart";
 import { External } from "../icons";
-import { btn, Dot, duration, ErrorNote, Pill, sci } from "../ui";
+import { btn, Dot, duration, ErrorNote, input, Pill, sci } from "../ui";
 
 /** Current Run, laid out like Unsloth's: status and trainer panels, then live charts, then take the model home. */
 export default function CurrentRun({ id }: { id: string }) {
@@ -137,6 +137,73 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
                empty={trainer === "Fireworks" ? "Fireworks reports metrics when the job ends." : undefined} />
         <Chart title="Learning Rate" format={sci} points={t.metrics.filter((m) => m.lr != null).map((m) => ({ x: m.step, y: m.lr! }))} />
       </div>
+
+      {t.canChat && <TalkToModel id={run.id} model={shortModel(run.baseModel)} />}
     </div>
+  );
+}
+
+type Turn = { q: string; original?: string; trained?: string; error?: string };
+
+/** Ask the original model and the trained one the same question, answers side by side (Tinker runs). */
+function TalkToModel({ id, model }: { id: string; model: string }) {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+
+  const ask = async () => {
+    const q = question.trim();
+    if (!q || asking) return;
+    setAsking(true);
+    setQuestion("");
+    setTurns((all) => [...all, { q }]);
+    const settle = (patch: Partial<Turn>) => setTurns((all) => all.map((turn, i) => (i === all.length - 1 ? { ...turn, ...patch } : turn)));
+    try {
+      const res = await fetch(`/api/runs/${id}/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "The models didn't answer.");
+      settle({ original: body.original, trained: body.trained });
+    } catch (e) {
+      settle({ error: e instanceof Error ? e.message : "The models didn't answer." });
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  return (
+    <section className="glass space-y-5 rounded-[32px] p-6 sm:p-8" aria-label="Talk to your model">
+      <div>
+        <p className="text-[13px] tracking-[0.08em] text-muted uppercase">Talk to your model</p>
+        <p className="mt-1 text-[15px] text-muted">Ask anything. The original {model} and yours get the same question.</p>
+      </div>
+
+      {turns.map((turn, i) => (
+        <div key={i} className="space-y-3">
+          <p className="ml-auto w-fit max-w-[560px] rounded-3xl rounded-br-lg bg-accent px-5 py-3 text-white">{turn.q}</p>
+          {turn.error ? <ErrorNote>{turn.error}</ErrorNote> : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {([["Original", turn.original, false], ["Yours", turn.trained, true]] as const).map(([label, text, mine]) => (
+                <figure key={label} className={`rounded-2xl border p-4 text-[15px] ${mine ? "border-accent/40 bg-white/70" : "border-white/70 bg-white/40"}`}>
+                  <figcaption className={`mb-2 text-xs font-medium tracking-[0.08em] uppercase ${mine ? "text-accent" : "text-faint"}`}>{label}</figcaption>
+                  {text === undefined
+                    ? <p className="flex items-center gap-2 text-faint"><Dot /> Thinking…</p>
+                    : <p className="leading-relaxed whitespace-pre-wrap">{text || "(no answer)"}</p>}
+                </figure>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      <form onSubmit={(e) => { e.preventDefault(); ask(); }} className="flex gap-3">
+        <label htmlFor="ask" className="sr-only">Ask your model</label>
+        <input id="ask" value={question} onChange={(e) => setQuestion(e.target.value)} disabled={asking}
+               placeholder={asking ? "Both models are answering (about 30 seconds)…" : "Ask your model something…"}
+               className={`${input} min-w-0 flex-1 rounded-full`} />
+        <button type="submit" disabled={asking || !question.trim()} className={btn.primary}>Ask</button>
+      </form>
+    </section>
   );
 }

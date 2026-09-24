@@ -658,7 +658,18 @@ def catalog(
     """Show which open models each trainer can fine-tune (live sources)."""
     from .catalog import build_catalog
 
-    entries = build_catalog()
+    failures: dict[str, str] = {}
+    entries = build_catalog(failures=failures)
+    for name, reason in failures.items():
+        typer.secho(f"Couldn't read the {name} model list: {reason}", fg="yellow", err=True)
+    # A trainer whose list couldn't be read keeps its models from the last catalog written
+    if failures and json_out and json_out.exists():
+        try:
+            previous = json.loads(json_out.read_text())
+        except (OSError, ValueError):
+            previous = []
+        if isinstance(previous, list):
+            entries += [e for e in previous if isinstance(e, dict) and e.get("trainer") in failures]
     if trainer:
         entries = [e for e in entries if e["trainer"] == trainer.lower()]
     if not entries:
