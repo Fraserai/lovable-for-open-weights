@@ -175,12 +175,41 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
   );
 }
 
-/** The DATASET box: trending text datasets when empty, Hub search as you type, or paste owner/name. */
+type Readiness = "ready" | "mapping" | "unreadable";
+// One check per dataset per page load (the server caches the viewer's answers for an hour too)
+const readiness = new Map<string, Promise<Readiness>>();
+function checkReady(id: string): Promise<Readiness> {
+  let p = readiness.get(id);
+  if (!p) {
+    p = fetch(`/api/datasets?id=${encodeURIComponent(id)}`)
+      .then(async (r) => (r.ok ? ((await r.json()) as DatasetInfo) : null))
+      .then((info): Readiness => (!info ? "unreadable" : info.chat || info.guess ? "ready" : "mapping"))
+      .catch((): Readiness => "unreadable");
+    readiness.set(id, p);
+  }
+  return p;
+}
+
+const READY_BADGE: Record<Readiness, { label: string; tone: string; title: string }> = {
+  ready: { label: "Ready", tone: "bg-[#34c759]/15 text-[#1f8a3a]", title: "Has chat messages or question/answer columns: imports as-is." },
+  mapping: { label: "Needs mapping", tone: "bg-amber-400/20 text-amber-800", title: "Pick which column is the question and which the answer, under Advanced." },
+  unreadable: { label: "Can't preview", tone: "bg-black/5 text-faint", title: "Hugging Face's viewer can't read it (gated, private or not a table)." },
+};
+
+/** The DATASET box: trending text datasets when empty, Hub search as you type, or paste owner/name.
+ * Each result is checked in the background and labelled Ready, Needs mapping or Can't preview. */
 function HubSearch({ value, onPick }: { value: string | null; onPick: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<DatasetHit[] | null>(null);
+  const [ready, setReady] = useState<Record<string, Readiness>>({});
   const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    for (const h of hits ?? []) checkReady(h.id).then((r) => alive && setReady((all) => (all[h.id] === r ? all : { ...all, [h.id]: r })));
+    return () => { alive = false; };
+  }, [hits]);
 
   useEffect(() => {
     if (!open) return;
@@ -228,9 +257,13 @@ function HubSearch({ value, onPick }: { value: string | null; onPick: (id: strin
             {hits?.map((h) => (
               <li key={h.id}>
                 <button type="button" role="option" aria-selected={h.id === value} onClick={() => pick(h.id)}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-black/[0.05] aria-selected:bg-accent/10">
+                        disabled={ready[h.id] === "unreadable"} title={ready[h.id] && READY_BADGE[ready[h.id]].title}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left enabled:hover:bg-black/[0.05] disabled:cursor-default disabled:opacity-50 aria-selected:bg-accent/10">
                   <span className="min-w-0 flex-1 truncate font-mono text-sm">{h.id}</span>
-                  <span className="shrink-0 text-xs text-faint">{h.downloads.toLocaleString()} ↓</span>
+                  {ready[h.id]
+                    ? <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${READY_BADGE[ready[h.id]].tone}`}>{READY_BADGE[ready[h.id]].label}</span>
+                    : <span className="shrink-0 text-[11px] text-faint">checking…</span>}
+                  <span className="w-16 shrink-0 text-right text-xs text-faint">{h.downloads.toLocaleString()} ↓</span>
                 </button>
               </li>
             ))}

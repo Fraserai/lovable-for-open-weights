@@ -11,14 +11,15 @@ export type ModelOption = {
   size?: string | null; // "4B", "1T"
 };
 
+/** What the Train page starts on: small, cheap, and proven end to end (Banking77: 67.5% -> 82.5% for ~41c on Tinker). */
 export const DEFAULT_MODEL: ModelOption = {
-  id: "accounts/fireworks/models/glm-5p3-flash",
-  name: "GLM 5.3 Flash",
-  trainer: "Fireworks",
-  hfRepo: "zai-org/GLM-5.3-Flash",
-  note: "320B · 64K context · LoRA",
+  id: "Qwen/Qwen3.5-4B",
+  name: "Qwen3.5-4B",
+  trainer: "Tinker",
+  hfRepo: "Qwen/Qwen3.5-4B",
+  note: "4B · 64K context · LoRA",
   ready: true,
-  size: "320B",
+  size: "4B",
 };
 
 /** What each trainer is, in the Run preview's words. Where training runs is what regulated customers ask first. */
