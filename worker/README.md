@@ -18,32 +18,29 @@ prepaid Jobs credit on the account) for Unsloth; `HF_TOKEN` (write) to publish.
 
 ```bash
 # 1a. From documents: parse (free with --preview), then write examples
-./trainloop prepare ./docs --goal "Answer member questions about fees" --run acme-faq --preview
-./trainloop prepare ./docs --goal "..." --run acme-faq --base-model Qwen/Qwen3.5-4B --max-chunks 20
+uv run trainloop prepare ./docs --goal "Answer member questions about fees" --run acme-faq --preview
+uv run trainloop prepare ./docs --goal "..." --run acme-faq --base-model Qwen/Qwen3.5-4B --max-chunks 20
 
 # 1b. Or from a ready-made dataset (no example writing, no cost)
-./trainloop dataset --run ato --hf simplelex/ATO-Australian-Tax-Rulings-and-Guidance \
+uv run trainloop dataset --run ato --hf simplelex/ATO-Australian-Tax-Rulings-and-Guidance \
     --config ato_interpretative_decisions --limit 300 --base-model Qwen/Qwen3.5-4B --goal "..."
-./trainloop dataset --run mine --file data.jsonl --goal "..."
+uv run trainloop dataset --run mine --file data.jsonl --goal "..."
 
 # 2. Optionally change the model or settings (free; 0 = sized for the data), see the plan and cost
 #    (free), then train (paid; asks first). The web page's Train screen calls these same commands.
-./trainloop configure --run ato --base-model unsloth:Qwen/Qwen3.5-4B --epochs 2 --lora-rank 16
-./trainloop configure --run ato --json '{"max_steps": 60, "lora_alpha": 64, "lr_scheduler": "cosine"}'  # any of settings.py
-./trainloop plan --run ato
-./trainloop train --run ato
+uv run trainloop configure --run ato --base-model unsloth:Qwen/Qwen3.5-4B --epochs 2 --lora-rank 16
+uv run trainloop configure --run ato --json '{"max_steps": 60, "lora_alpha": 64, "lr_scheduler": "cosine"}'  # any of settings.py
+uv run trainloop plan --run ato
+uv run trainloop train --run ato
 
 # 3. Progress (Fireworks jobs run remotely; Tinker runs in the foreground of `train`)
-./trainloop status --run ato
+uv run trainloop status --run ato
 
 # 4. Take it home
-./trainloop fetch --run ato --hf-repo you/ato-tax-model
+uv run trainloop fetch --run ato --hf-repo you/ato-tax-model
 ```
 
-`./trainloop` is a small launcher for `uv run trainloop` that keeps working even when macOS
-hides the environment's files (see the note in `pyproject.toml`).
-
-Try a finished Tinker model against the original: `./trainloop chat --run ato --message "..."`.
+Try a finished Tinker model against the original: `uv run trainloop chat --run ato --message "..."`.
 
 Other commands: `trainloop validate file.jsonl` checks any dataset; `trainloop catalog` lists what each
 trainer can fine-tune (live).

@@ -7,13 +7,13 @@ import { Check, Chevron, Chip, Search } from "./icons";
 import { Tabs } from "./ui";
 
 /** One open model and every trainer that can tune it. */
-export type ModelGroup = { key: string; name: string; size: string | null; options: ModelOption[] };
+type ModelGroup = { key: string; name: string; size: string | null; options: ModelOption[] };
 
 // When a model is on several trainers, start with the one proven end to end.
 const PREFERENCE: Trainer[] = ["Tinker", "Fireworks", "Unsloth"];
 const rank = (m: ModelOption) => (m.ready ? 0 : 10) + PREFERENCE.indexOf(m.trainer ?? "Unsloth");
 
-export function groupModels(models: ModelOption[]): ModelGroup[] {
+function groupModels(models: ModelOption[]): ModelGroup[] {
   const groups = new Map<string, ModelGroup>();
   for (const m of models) {
     const k = modelKey(m);
@@ -37,7 +37,7 @@ export function trainerChoices(value: ModelOption, all: ModelOption[]): ModelOpt
   return [...withValue, ...unsloth].sort((a, b) => rank(a) - rank(b));
 }
 
-export function TrainerBadge({ m }: { m: ModelOption }) {
+function TrainerBadge({ m }: { m: ModelOption }) {
   if (!m.trainer) return null;
   return (
     <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${m.ready ? "bg-accent/12 text-accent" : "bg-black/5 text-faint"}`}

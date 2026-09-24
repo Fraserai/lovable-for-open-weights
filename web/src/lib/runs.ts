@@ -12,10 +12,8 @@ const ROOT = path.resolve(process.cwd(), "..");
 const WORKER = path.join(ROOT, "worker");
 const RUNS = path.join(ROOT, "runs");
 
-// Belt and braces: after the project moved folders, macOS "hidden" flags stopped Python loading the
-// worker's editable install (fixed in worker/pyproject.toml). Naming the source directory outright
-// means a broken install record can't take the app down again.
-const WORKER_ENV = { PYTHONPATH: path.join(WORKER, "src"), NO_COLOR: "1" };
+// Plain output: the page reads these logs back and shows the last error line.
+const WORKER_ENV = { NO_COLOR: "1" };
 
 const MAX_POINTS = 400;
 

@@ -48,4 +48,3 @@ export const modelKey = (m: ModelOption) => (m.hfRepo ?? m.id).toLowerCase();
 
 // Matches what the worker can ingest today (worker/src/trainloop/ingest.py), plus ready-made datasets.
 export const ACCEPTED_FILES = ".pdf,.docx,.pptx,.html,.md,.txt,.jsonl";
-export const DOC_TYPES = "PDF, Word, PowerPoint, HTML, Markdown, text";

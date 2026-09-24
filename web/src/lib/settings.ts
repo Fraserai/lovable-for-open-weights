@@ -31,7 +31,7 @@ const ALL: Key[] = ["project_name", "method", "max_steps", "epochs", "context_le
   "lora_alpha", "lora_dropout", "target_modules", "lora_variant", "optimizer", "lr_scheduler", "batch_size",
   "grad_accum", "weight_decay", "warmup_steps", "seed", "gradient_checkpointing"];
 
-export const SUPPORTED: Record<Trainer, Set<Key>> = {
+const SUPPORTED: Record<Trainer, Set<Key>> = {
   Tinker: new Set(["project_name", "method", "max_steps", "epochs", "context_length", "learning_rate", "lora_rank",
     "lr_scheduler", "batch_size"]),
   Fireworks: new Set(["project_name", "method", "epochs", "context_length", "learning_rate", "lora_rank"]),

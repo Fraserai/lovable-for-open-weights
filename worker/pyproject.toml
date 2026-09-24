@@ -21,11 +21,6 @@ tinker = ["tinker>=0.30", "tinker-cookbook>=0.5.7", "certifi"]
 
 [tool.uv]
 default-groups = ["dev", "tinker"]
-# Something on this Mac periodically sets the "hidden" flag on dependency folders (.venv,
-# node_modules), and Python 3.12.14+ silently skips hidden .pth files, which breaks the editable
-# install of trainloop. Entry points therefore name src/ directly: pytest (below), the web app
-# (PYTHONPATH) and the ./trainloop launcher.
-link-mode = "copy"
 
 [build-system]
 requires = ["hatchling"]
