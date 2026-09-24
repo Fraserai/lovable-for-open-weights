@@ -96,3 +96,16 @@ body {
 .slider:disabled { cursor: not-allowed; }
 .slider.auto { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 35%, transparent) var(--pct, 0%), rgb(0 0 0 / 0.1) var(--pct, 0%)); }
 .slider.auto::-webkit-slider-thumb { background: #f4f4f6; }
+
+/* The guide pointing at part of the page: a soft blue ring that pulses twice */
+.guide-spot {
+  animation: guide-spot 1.3s ease-in-out 2;
+  border-radius: 32px;
+}
+@keyframes guide-spot {
+  0%, 100% { box-shadow: var(--shadow), 0 0 0 0 rgb(0 122 255 / 0); }
+  50% { box-shadow: var(--shadow), 0 0 0 6px rgb(0 122 255 / 0.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-spot { animation: none; box-shadow: var(--shadow), 0 0 0 4px rgb(0 122 255 / 0.35); }
+}

@@ -1,7 +1,6 @@
 import "server-only";
 
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { rootEnv } from "./env";
 import { TRAINERS, type Trainer } from "./models";
 
 const auth = (): HeadersInit => (process.env.HF_TOKEN ? { Authorization: `Bearer ${process.env.HF_TOKEN}` } : {});
@@ -77,7 +76,6 @@ export async function datasetInfo(id: string, config?: string, split?: string): 
 
 /** Which trainers have keys set in the root .env. Names only; values never leave the server. */
 export async function trainerStatus(): Promise<{ trainer: Trainer; connected: boolean }[]> {
-  const env = await readFile(path.resolve(process.cwd(), "..", ".env"), "utf8").catch(() => "");
-  const set = new Set(env.split("\n").map((l) => l.match(/^\s*([A-Z_]+)\s*=\s*\S/)?.[1]).filter(Boolean));
-  return (Object.keys(TRAINERS) as Trainer[]).map((t) => ({ trainer: t, connected: set.has(TRAINERS[t].env) }));
+  const env = await rootEnv();
+  return (Object.keys(TRAINERS) as Trainer[]).map((t) => ({ trainer: t, connected: !!env[TRAINERS[t].env] }));
 }

@@ -14,11 +14,13 @@ export const btn = {
 export const input =
   "h-12 w-full rounded-2xl border border-white/70 bg-field px-4 text-[15px] shadow-[inset_0_1px_2px_rgb(0_0_0/0.04)] outline-none transition placeholder:text-faint focus:border-accent/40 focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-50";
 
-export function Card({ icon, tone = "#34c759", title, subtitle, action, children }: {
+export function Card({ icon, tone = "#34c759", title, subtitle, action, children, guide }: {
   icon: React.ReactNode; tone?: string; title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode;
+  /** Lets the guide point at this card (lib/guide.ts spotlight) */
+  guide?: string;
 }) {
   return (
-    <section className="glass @container relative rounded-[32px] p-6 sm:p-8 has-[[aria-haspopup][aria-expanded=true]]:z-40" aria-label={title}>
+    <section data-guide={guide} className="glass @container relative rounded-[32px] p-6 sm:p-8 has-[[aria-haspopup][aria-expanded=true]]:z-40" aria-label={title}>
       <header className="mb-7 flex flex-wrap items-center gap-4">
         <span className="grid size-12 shrink-0 place-items-center rounded-full" style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${tone} 22%, white), color-mix(in srgb, ${tone} 12%, white))`, color: tone, boxShadow: "inset 0 1px 0 rgb(255 255 255 / 0.8)" }}>
           {icon}

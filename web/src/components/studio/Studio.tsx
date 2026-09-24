@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { BRAND } from "@/lib/brand";
 import { useRuns } from "@/lib/client";
+import { onGuideAction, setPageState } from "@/lib/guide";
+import Guide from "../Guide";
 import { Logo } from "../icons";
 import Configure from "./Configure";
 import CurrentRun from "./CurrentRun";
@@ -30,6 +32,16 @@ export default function Studio({ initialTab, initialRun, initialDraft }: { initi
   }, [tab, current, draft]);
 
   const open = (id: string) => { setRun(id); setTab("run"); };
+
+  // The guide can switch tabs, and needs to know which one is showing
+  useEffect(() => { setPageState({ tab, currentRun: tab === "run" ? current : null, runsStarted: runs?.filter((r) => r.started).length ?? 0 }); },
+    [tab, current, runs]);
+  useEffect(() => onGuideAction((a) => {
+    if (a.type !== "open_tab") return null;
+    if (a.tab === "run" && !current) return "There's no run to show yet.";
+    setTab(a.tab);
+    return `Opened ${a.tab === "run" ? "Current Run" : a.tab === "history" ? "History" : "Configure"}.`;
+  }), [current]);
   const tabs: { key: Tab; label: string; disabled?: boolean }[] = [
     { key: "configure", label: "Configure" },
     { key: "run", label: "Current Run", disabled: !current },
@@ -45,7 +57,7 @@ export default function Studio({ initialTab, initialRun, initialDraft }: { initi
       <h1 className="mt-8 text-[44px] leading-none font-normal tracking-[-0.02em]">Train</h1>
       <p className="mt-3 text-[17px] text-muted">Configure and start training</p>
 
-      <nav className="mt-10 flex gap-10 border-b border-line" role="tablist" aria-label="Train">
+      <nav data-guide="tabs" className="mt-10 flex gap-10 border-b border-line" role="tablist" aria-label="Train">
         {tabs.map((t) => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} disabled={t.disabled}
                   onClick={() => setTab(t.key)}
@@ -62,6 +74,7 @@ export default function Studio({ initialTab, initialRun, initialDraft }: { initi
         {tab === "run" && current && <CurrentRun key={current} id={current} />}
         {tab === "history" && <History runs={runs} onOpen={open} />}
       </div>
+      <Guide />
     </main>
   );
 }

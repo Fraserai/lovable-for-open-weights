@@ -2,10 +2,11 @@
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { loadModels, useRun } from "@/lib/client";
+import { onGuideAction, setPageState, type GuideAction } from "@/lib/guide";
 import type { DatasetInfo } from "@/lib/hub";
 import { DEFAULT_MODEL, TRAINERS, type ModelOption, type Trainer } from "@/lib/models";
 import type { RunStatus, TrainPlan } from "@/lib/runs";
-import { MAX_LORA_RANK, METHODS, toWorker, type Settings } from "@/lib/settings";
+import { LABELS, MAX_LORA_RANK, METHODS, toWorker, type Key, type Settings } from "@/lib/settings";
 import { Brain, FileCog, Server } from "../icons";
 import ModelPicker, { trainerChoices } from "../ModelPicker";
 import { btn, Card, Dot, Label, Select } from "../ui";
@@ -201,10 +202,71 @@ export default function Configure({ active, initialDraft, onDraft, onStarted }: 
   const trainer = model.trainer;
   const method = settings.method ?? "lora";
 
+  // The guide (the logo button) sees what's set and can fill the form in. It can't start training.
+  // Uploaded files are shared as a count only: their names and contents stay out of it.
+  const datasetLabel = source?.kind === "hub" ? source.id : source?.kind === "files" ? `${source.files.length} uploaded file(s)` : source ? "a checked dataset" : null;
+  useEffect(() => {
+    setPageState({
+      configure: {
+        model: { name: model.name, id: model.id, trainer: trainer ? TRAINERS[trainer].label : null },
+        alsoTrainableOn: choices.filter((c) => c.id !== model.id && c.ready && c.trainer).map((c) => TRAINERS[c.trainer!].label),
+        dataset: datasetLabel, datasetKind: source?.kind ?? null, documentsNeedGoal: docs && !docsGoal.trim(),
+        previewState: state, rows: prepared ? draft?.rows ?? null : null,
+        settings: toWorker(settings),
+        plan: currentPlan && { steps: currentPlan.steps, epochs: currentPlan.epochs, batch: currentPlan.batch_size,
+          estCost: currentPlan.est_cost, maxCost: currentPlan.max_cost, ignoredSettings: currentPlan.ignored },
+        problem: importError ?? planError ?? startError ?? null,
+        trainerKeys: Object.fromEntries(Object.entries(connected).map(([t, ok]) => [TRAINERS[t as Trainer].label, ok])),
+      },
+    });
+  }, [model, trainer, choices, datasetLabel, source?.kind, docs, docsGoal, state, prepared, draft?.rows, settings, currentPlan,
+      importError, planError, startError, connected]);
+
+  const handleGuide = useEffectEvent(async (a: GuideAction): Promise<string | null> => {
+    if (a.type === "set_model") {
+      const q = a.query.trim().toLowerCase();
+      const all = allModels.length ? allModels : await loadModels();
+      const ready = all.filter((m) => m.ready);
+      let hit = ready.find((m) => [m.name, m.hfRepo ?? "", m.id].some((x) => x.toLowerCase() === q))
+        ?? ready.find((m) => `${m.name} ${m.hfRepo ?? ""}`.toLowerCase().includes(q));
+      if (!hit && /^[\w.-]+\/[\w.-]+$/.test(a.query.trim())) {
+        const hub: ModelOption[] = await fetch(`/api/models?q=${encodeURIComponent(a.query.trim())}`).then((r) => r.json()).then((d) => d.hub).catch(() => []);
+        hit = hub.find((m) => m.ready && m.hfRepo?.toLowerCase() === q);
+      }
+      if (!hit) return `Couldn't find a model called "${a.query}".`;
+      const pick = trainerChoices(hit, all).find((c) => c.ready && c.trainer === model.trainer) ?? trainerChoices(hit, all).find((c) => c.ready) ?? hit;
+      pickModel(pick);
+      return `Model set to ${pick.name} on ${pick.trainer ? TRAINERS[pick.trainer].label : "a trainer"}.`;
+    }
+    if (a.type === "set_trainer") {
+      const want = a.trainer.trim().toLowerCase();
+      const c = choices.find((x) => x.ready && x.trainer && [TRAINERS[x.trainer].label, x.trainer].some((n) => n.toLowerCase() === want));
+      if (!c) return `${model.name} can't train on ${a.trainer}.`;
+      pickModel(c);
+      return `Trainer set to ${TRAINERS[c.trainer!].label}.`;
+    }
+    if (a.type === "set_dataset") {
+      const id = a.id.trim();
+      if (!/^[\w.-]+\/[\w.-]+$/.test(id)) return `"${a.id}" isn't a Hugging Face dataset id.`;
+      setInfo(null);
+      changeSource({ kind: "hub", id, limit: 1000 });
+      return `Dataset set to ${id}; checking it now.`;
+    }
+    if (a.type === "set_settings") {
+      const patch: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(a.settings ?? {})) if (k in LABELS) patch[k] = v === null || v === "auto" ? undefined : v;
+      if (!Object.keys(patch).length) return "No settings I recognise.";
+      setSettings((cur) => ({ ...cur, ...patch }));
+      return `Changed ${Object.keys(patch).map((k) => LABELS[k as Key]).join(", ")}.`;
+    }
+    return null;
+  });
+  useEffect(() => onGuideAction((a) => handleGuide(a)), []);
+
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
       <div className="min-w-0 space-y-6">
-        <Card icon={<Brain className="size-6" />} title="Model" subtitle="Select model and training method">
+        <Card guide="model" icon={<Brain className="size-6" />} title="Model" subtitle="Select model and training method">
           <div className="grid gap-5 @3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.1fr)] @xl:grid-cols-2">
             <div className="@xl:col-span-2 @3xl:col-span-1">
               <Label upper hint="Any open model. The Trainers tab lists models our trainers can tune; the Hugging Face tab finds any other, trained on a GPU rented from Hugging Face." htmlFor="model">Model</Label>
@@ -318,7 +380,7 @@ function ConfigCard({ model, settings, source, allModels, onLoad, onReset }: {
     setNote(modelId && !m ? `Loaded the settings; ${modelId} isn't on a connected trainer, so the model is unchanged.` : `Loaded ${f.name}.`);
   };
   return (
-    <Card icon={<FileCog className="size-6" />} tone="#30b0c7" title="Configuration" subtitle="Save and load configurations">
+    <Card guide="configuration" icon={<FileCog className="size-6" />} tone="#30b0c7" title="Configuration" subtitle="Save and load configurations">
       <div className="flex flex-wrap gap-3">
         <input ref={picker} type="file" accept=".yaml,.yml" className="hidden" aria-label="Load configuration" onChange={(e) => { load(e.target.files?.[0]); e.target.value = ""; }} />
         <button type="button" onClick={() => picker.current?.click()} className={btn.ghost}>Load YAML</button>

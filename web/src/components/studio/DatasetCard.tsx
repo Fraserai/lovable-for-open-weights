@@ -52,7 +52,7 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
   const autoWorks = !!info && (info.chat || !!info.guess);
 
   return (
-    <Card icon={<Database className="size-6" />} tone="#ff2d55" title="Dataset" subtitle="Select or upload training data">
+    <Card guide="dataset" icon={<Database className="size-6" />} tone="#ff2d55" title="Dataset" subtitle="Select or upload training data">
       <div className="grid gap-6 @2xl:grid-cols-2">
         <div>
           <Label upper hint="Any dataset on Hugging Face with chat messages or question/answer columns. Imported as-is." htmlFor="dataset">Dataset</Label>

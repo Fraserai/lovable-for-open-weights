@@ -95,6 +95,10 @@ export const Hug = ({ className }: P) => (
   </svg>
 );
 
+export const ArrowUp = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={2.2} aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+);
+
 // The mark: three stacked plates (weights / model layers)
 export const Logo = ({ className }: P) => (
   <svg viewBox="0 0 32 32" className={className} aria-hidden>

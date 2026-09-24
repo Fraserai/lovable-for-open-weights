@@ -27,7 +27,7 @@ export default function ParamsCard({ s, set, trainer, plan }: {
   const steps = plan?.steps ?? 250;
 
   return (
-    <Card icon={<Sliders className="size-6" />} tone="#ff9500" title="Parameters" subtitle="Configure training parameters"
+    <Card guide="parameters" icon={<Sliders className="size-6" />} tone="#ff9500" title="Parameters" subtitle="Configure training parameters"
           action={<Tabs label="Detail" value={mode} onChange={setMode} options={[{ value: "simple", label: "Simple" }, { value: "advanced", label: "Advanced" }]} />}>
       <div className="grid gap-x-10 gap-y-7 @2xl:grid-cols-2">
         <div>

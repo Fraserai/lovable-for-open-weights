@@ -12,8 +12,8 @@ const ROOT = path.resolve(process.cwd(), "..");
 const WORKER = path.join(ROOT, "worker");
 const RUNS = path.join(ROOT, "runs");
 
-// Plain output: the page reads these logs back and shows the last error line.
-const WORKER_ENV = { NO_COLOR: "1" };
+// Plain, unbuffered output: the page reads it as it arrives (progress, and trainers saying they're out of credit).
+const WORKER_ENV = { NO_COLOR: "1", PYTHONUNBUFFERED: "1" };
 
 const MAX_POINTS = 400;
 
@@ -143,7 +143,7 @@ export async function startPrepare(id: string, goal: string, baseModel: string, 
   const log = createWriteStream(path.join(dir, "prepare.log"));
   // Args array, no shell: user text can't be interpreted as a command.
   const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", ...args],
-    { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } });
+    { env: { ...process.env, ...WORKER_ENV } });
   child.stdout.pipe(log);
   child.stderr.pipe(log);
   const finish = (code: number | null) => {
@@ -155,15 +155,32 @@ export async function startPrepare(id: string, goal: string, baseModel: string, 
   child.on("close", finish);
 }
 
+/** A trainer account with no credit. The trainers' SDKs retry on that indefinitely, so spot it in the
+ * worker's output and stop, with a message the page can show. */
+function outOfCredit(text: string): string | null {
+  if (!/billing status|Error code: 402|Insufficient credits|no prepaid credit|payment required/i.test(text)) return null;
+  if (/thinkingmachines|tinker/i.test(text)) return "Tinker is out of credit. Add some at https://tinker.thinkingmachines.ai/billing/balance, then try again.";
+  if (/fireworks/i.test(text)) return "Fireworks is out of credit. Add some in your Fireworks billing settings, then try again.";
+  if (/huggingface/i.test(text)) return "Your Hugging Face account has no prepaid credit for GPU jobs. Add some at https://huggingface.co/settings/billing, then try again.";
+  return "The trainer's account is out of credit. Add some, then try again.";
+}
+
 /** Runs a worker command, returning its stdout. Used for the free planning step. */
 function worker(args: string[], timeoutMs = 120_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", ...args],
       { env: { ...process.env, ...WORKER_ENV } });
     let out = "", err = "";
-    child.stdout.on("data", (d) => (out += d));
-    child.stderr.on("data", (d) => (err += d));
     const timer = setTimeout(() => { child.kill(); reject(new Error("worker timed out")); }, timeoutMs);
+    const watch = () => {
+      const broke = outOfCredit(err + out);
+      if (!broke) return;
+      clearTimeout(timer);
+      child.kill();
+      reject(new Error(broke));
+    };
+    child.stdout.on("data", (d) => { out += d; watch(); });
+    child.stderr.on("data", (d) => { err += d; watch(); });
     child.on("error", reject);
     child.on("close", (code) => {
       clearTimeout(timer);
@@ -202,16 +219,35 @@ export async function startTraining(id: string): Promise<void> {
   await rm(launch, { force: true });
   const log = createWriteStream(path.join(dir, "train.log"), { flags: "a" });
   const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", "train", "--run", id, "--yes"],
-    { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } });
+    { env: { ...process.env, ...WORKER_ENV } });
   let out = "";
-  child.stdout.on("data", (d) => (out = (out + d).slice(-8000)));
-  child.stderr.on("data", (d) => (out = (out + d).slice(-8000)));
-  child.stdout.pipe(log);
-  child.stderr.pipe(log);
+  let stopped: string | null = null;
   // If the worker stops before the trainer takes the job (a missing key, say), say why instead of waiting forever
   const failed = (error: string) => writeFile(launch, JSON.stringify({ error })).catch(() => {});
+  const watch = (d: Buffer) => {
+    out = (out + d).slice(-8000);
+    const broke = !stopped && outOfCredit(out);
+    if (!broke) return;
+    stopped = broke;
+    log.write(`\n${broke}\n`);
+    child.kill();
+    failed(broke);
+    markFailed(dir, broke);
+  };
+  child.stdout.on("data", watch);
+  child.stderr.on("data", watch);
+  child.stdout.pipe(log);
+  child.stderr.pipe(log);
   child.on("error", (e) => { log.write(`\nCould not start the trainer: ${e.message}\n`); failed(`Could not start the trainer: ${e.message}`); });
-  child.on("close", (code) => { if (code !== 0) failed(lastError(stripAnsi(out).split("\n"))); });
+  child.on("close", (code) => { if (code !== 0 && !stopped) failed(lastError(stripAnsi(out).split("\n"))); });
+}
+
+/** A run the worker had marked as training, but that we stopped: record why, so it doesn't show "Training" forever. */
+async function markFailed(dir: string, error: string) {
+  const file = path.join(dir, "run.json");
+  const run = await readOr<Record<string, unknown> | null>(file, JSON.parse, null);
+  if (run?.job_state !== "JOB_STATE_RUNNING") return;
+  await writeFile(file, JSON.stringify({ ...run, job_state: "JOB_STATE_FAILED", error }, null, 2)).catch(() => {});
 }
 
 async function trainProgress(dir: string, run: Record<string, unknown> | null): Promise<TrainProgress> {
@@ -271,7 +307,7 @@ export async function startFetch(id: string): Promise<void> {
   await writeFile(path.join(dir, "fetch.json"), JSON.stringify({ status: "running" }));
   const log = createWriteStream(path.join(dir, "fetch.log"));
   const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", "fetch", "--run", id, "--hf-repo", "auto"],
-    { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } });
+    { env: { ...process.env, ...WORKER_ENV } });
   child.stdout.pipe(log);
   child.stderr.pipe(log);
   const done = (code: number | null) =>
