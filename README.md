@@ -38,6 +38,7 @@ terminal (see [worker/README.md](worker/README.md)).
 | See what training will cost | `trainloop plan` | Free |
 | Train | `trainloop train` | Tinker (Hugging Face ids), Fireworks (`accounts/...`), or a Hugging Face GPU running Unsloth (`unsloth:<id>`) |
 | Take the model home | `trainloop fetch --hf-repo you/name` | Download + private Hugging Face repo |
+| Prove it: the Scorecard | `trainloop score` | Original vs trained vs a frontier model on the ~10% of examples held back from training |
 
 Which trainer honours which setting lives in `worker/src/trainloop/settings.py` (mirrored in
 `web/src/lib/settings.ts`). Controls a trainer can't honour are greyed out on the page.
@@ -47,8 +48,8 @@ Which trainer honours which setting lives in `worker/src/trainloop/settings.py` 
 - **Proof it improves models:** on Banking77 (77-way intent classification, 200 held-out messages),
   Qwen3.5-4B went from 67.5% to 82.5% after 1,000 examples (~41¢, ~11 min on Tinker), and
   **Kimi-K2.6 (1T parameters) went from 76.0% to 92.0%** after 1,540 examples (~$4.12, ~55 min).
-  Reproduce: `worker/scripts/banking77_data.py`, `trainloop dataset` + `train`, then
-  `worker/scripts/banking77_score.py <run>`.
+  Reproduce: `worker/scripts/banking77_data.py`, `trainloop dataset --no-hold-out` + `train`, then
+  `worker/scripts/banking77_score.py <run>`. The Kimi run's result is also on its Scorecard in the app.
 - **Trainers:** Tinker is proven end to end. Fireworks and Hugging Face GPU jobs are wired and their
   plans verified; neither has trained live yet. **All three accounts are currently out of credit.**
 - **Not production-ready:** no login or billing, and training runs as a process of the dev server,

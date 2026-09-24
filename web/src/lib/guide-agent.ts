@@ -34,7 +34,7 @@ const TOOLS = [
     { settings: { type: "object", description: `Any of: ${SETTING_KEYS.join(", ")}`, additionalProperties: true } }, ["settings"]),
   fn("open_tab", "Open a tab of the Train page.", { tab: { type: "string", enum: ["configure", "run", "history"] } }, ["tab"]),
   fn("spotlight", "Scroll to and highlight part of the page while you explain it.",
-    { target: { type: "string", enum: ["model", "dataset", "parameters", "configuration", "preview", "tabs"] } }, ["target"]),
+    { target: { type: "string", enum: ["model", "dataset", "parameters", "configuration", "preview", "tabs", "scorecard"] } }, ["target"]),
 ];
 
 function fn(name: string, description: string, properties: Record<string, unknown>, required: string[]) {
@@ -53,7 +53,7 @@ The app is one page, Train, with tabs Configure, Current Run and History. Config
 - Parameters: Simple (project name, epochs or max steps, context length, learning rate) and Advanced (LoRA rank/alpha/dropout, target modules, RS-LoRA, optimizer, scheduler, batch size, grad accumulation, weight decay, warmup, seed, gradient checkpointing). Anything left on Auto is sized for the data. Controls a trainer can't honour are greyed out.
 - Configuration: save or load all settings as YAML.
 - Run preview (right-hand rail): steps, batch, context, learning rate, which trainer, where it runs, and the cost, updated live. Start Training is the only step that costs money.
-Current Run shows progress, loss and learning-rate charts, side-by-side chat for finished Tinker runs, and Publish to Hugging Face (a private repo with the LoRA adapter). History lists past runs.
+Every dataset keeps ~10% of its examples back from training. Current Run shows progress, loss and learning-rate charts, the Scorecard (the original model, the trained one and a frontier model such as GPT-6 Astra, scored on those held-back questions, which is how you prove your model beats the frontier at one thing; scoring costs a little, and the user presses Score it), side-by-side chat for finished Tinker runs, and Publish to Hugging Face (a private repo with the LoRA adapter). History lists past runs.
 
 Trainable models right now: ${catalog || "unavailable"}.
 

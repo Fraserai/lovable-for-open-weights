@@ -69,6 +69,13 @@ export type HubSource = {
   id: string; config?: string; split?: string; limit: number; userField?: string; assistantField?: string;
 };
 
+/** trainloop score's result (runs/<id>/scorecard.json), without the answers themselves. */
+export type Scorecard = {
+  metric: "exact" | "judge"; examples: number; updated: string; baseModel: string; frontierModel: string | null;
+  public: boolean; notes: string[];
+  contenders: Partial<Record<"original" | "trained" | "frontier", { score: number; correct: number; reused?: boolean; from?: string }>>;
+};
+
 export type RunSummary = {
   id: string; goal: string | null; baseModel: string | null; rows: number | null;
   state: "preparing" | "ready" | "training" | "trained" | "failed"; updated: number;
@@ -96,6 +103,10 @@ export type RunStatus = {
   sample: { user: string; assistant: string }[];
   report: string[];
   settings: Settings;
+  /** Examples held back from training to score on (none for runs made before the Scorecard) */
+  testRows: number | null;
+  scorecard: Scorecard | null;
+  scoring: { state: "idle" | "running" | "failed"; error: string | null };
 };
 
 // goal/baseModel: known before the worker writes run.json, so a preparing run can be shown
@@ -406,10 +417,66 @@ export async function getStatus(id: string): Promise<RunStatus | null> {
       ...(typeof run?.learning_rate === "number" ? { learning_rate: run.learning_rate } : {}),
       ...((run?.settings ?? {}) as Settings),
     },
+    testRows: typeof run?.test_rows === "number" ? run.test_rows : null,
+    scorecard: await readScorecard(dir),
+    scoring: await scoringState(dir),
     sourceInfo: run && typeof run.source === "object" && run.source
       ? (({ hf, config, split, limit }) => ({ hf, config, split, limit }))(run.source as Record<string, never>)
       : null,
   };
+}
+
+async function readScorecard(dir: string): Promise<Scorecard | null> {
+  type Raw = {
+    metric: Scorecard["metric"]; examples: number; updated: string; base_model: string; frontier_model: string | null;
+    public: boolean; notes?: string[]; contenders?: Record<string, { score: number; correct: number; reused?: boolean; from?: string }>;
+  };
+  const card = await readOr<Raw | null>(path.join(dir, "scorecard.json"), JSON.parse, null);
+  if (!card) return null;
+  // Scores only: the answers themselves stay on disk
+  const contenders = Object.fromEntries(Object.entries(card.contenders ?? {})
+    .map(([name, c]) => [name, { score: c.score, correct: c.correct, reused: c.reused, from: c.from }]));
+  return { metric: card.metric, examples: card.examples, updated: card.updated, baseModel: card.base_model,
+    frontierModel: card.frontier_model, public: card.public, notes: card.notes ?? [], contenders };
+}
+
+async function scoringState(dir: string): Promise<RunStatus["scoring"]> {
+  const s = await readOr<{ status: string; pid?: number; error?: string } | null>(path.join(dir, "score.json"), JSON.parse, null);
+  if (!s) return { state: "idle", error: null };
+  if (s.status === "running") return alive(s.pid) ? { state: "running", error: null } : { state: "idle", error: null };
+  return s.status === "failed" ? { state: "failed", error: s.error ?? "Scoring stopped." } : { state: "idle", error: null };
+}
+
+/** Score the original, the trained model and a frontier model on the held-back set (costs a little). */
+export async function startScore(id: string, frontier: string | null): Promise<void> {
+  const dir = runDir(id);
+  const record = (status: string, extra: Record<string, unknown> = {}) =>
+    writeFile(path.join(dir, "score.json"), JSON.stringify({ status, ...extra })).catch(() => {});
+  let stopped: string | null = null;
+  const pid = launch(["score", "--run", id, "--yes", ...(frontier ? ["--frontier", frontier] : ["--no-frontier"])],
+    path.join(dir, "score.log"), {
+      onText: (text, stop) => {
+        const broke = !stopped && outOfCredit(text.slice(-8000));
+        if (broke) { stopped = broke; stop(); }
+      },
+      onExit: (code, text) => record(code === 0 ? "done" : "failed",
+        code === 0 ? {} : { error: stopped ?? lastError(text.split("\n")) }),
+    });
+  await record("running", { pid });
+}
+
+/** Rough dollars for a frontier model to answer this run's held-back questions (OpenRouter's list prices). */
+export async function frontierEstimate(id: string, model: string): Promise<number | null> {
+  const test = await readOr(path.join(runDir(id), "test.jsonl"), (t) => t, "");
+  const rows = test.split("\n").filter(Boolean);
+  if (!rows.length) return null;
+  const res = await fetch("https://openrouter.ai/api/v1/models", { next: { revalidate: 3600 } }).catch(() => null);
+  const price = res?.ok ? ((await res.json()).data as { id: string; pricing: { prompt: string; completion: string } }[])
+    .find((m) => m.id === model)?.pricing : undefined;
+  if (!price) return null;
+  const long = rows.some((r) => ((JSON.parse(r).messages as { content: string }[]).at(-1)?.content ?? "").split(/\s+/).length > 6);
+  const promptTokens = rows.reduce((n, r) => n + r.length / 4, 0);
+  return promptTokens * Number(price.prompt) + rows.length * (long ? 800 : 64) * Number(price.completion);
 }
 
 /** Every run, newest first, for History and the sidebar. */

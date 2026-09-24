@@ -11,7 +11,7 @@ from typing import Annotated, Optional
 
 import typer
 
-from . import config, settings
+from . import config, holdout, settings
 from .validate import validate_jsonl
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -34,6 +34,20 @@ def _load(run_dir: Path) -> dict:
 
 def _save(run_dir: Path, state: dict) -> None:
     (run_dir / "run.json").write_text(json.dumps(state, indent=2))
+
+
+def _hold_out(run_dir: Path, enabled: bool) -> int:
+    """Moves a held-back test set out of train.jsonl (see holdout.py). Returns how many examples."""
+    test = run_dir / "test.jsonl"
+    if not enabled:
+        test.unlink(missing_ok=True)
+        return 0
+    kept, held = holdout.split(run_dir / "train.jsonl", test)
+    if held:
+        typer.echo(f"Held back {held:,} examples to score the model on (training on {kept:,}).")
+    else:
+        typer.echo(f"Too few examples to hold any back for scoring (need {holdout.MIN_EXAMPLES}).")
+    return held
 
 
 RunOpt = Annotated[str, typer.Option("--run", help="Run name, e.g. acme-member-faq")]
@@ -63,6 +77,7 @@ def prepare(
     max_chunks: Annotated[Optional[int], typer.Option(help="Cap chunks (useful for a cheap first pass)")] = None,
     preview: Annotated[bool, typer.Option(help="Parse and chunk only; don't call the generator")] = False,
     base_model: Annotated[str, typer.Option(help="Fireworks base model")] = config.DEFAULT_BASE_MODEL,
+    hold_out: Annotated[bool, typer.Option(help="Keep ~10% back as a test set for `trainloop score`")] = True,
 ):
     """Parse documents and write validated training JSONL for the goal."""
     from .ingest import chunk_markdown, find_documents, to_markdown
@@ -110,13 +125,14 @@ def prepare(
 
     for err in errors:
         typer.secho(f"  chunk failed: {err}", fg="yellow")
+    held = _hold_out(run_dir, hold_out)
     report = validate_jsonl(out, config.BASE_MODEL_TRAIN_CTX.get(base_model))
     typer.echo(report.summary())
     _save(run_dir, {
         "name": run, "goal": goal, "base_model": base_model, "generator_model": gen_model,
         "generator_provider": provider, "trainer": config.trainer_for(base_model),
         "system_prompt": system_prompt, "documents": [str(f) for f in files],
-        "chunks": len(chunks), "rows": report.valid, "est_tokens": report.est_tokens,
+        "chunks": len(chunks), "rows": report.valid, "est_tokens": report.est_tokens, "test_rows": held,
     })
     typer.secho(f"Wrote {out}. Review a few rows, then: trainloop train --run {run}",
                 fg="green" if report.ok else "red")
@@ -136,6 +152,7 @@ def dataset(
     user_template: Annotated[Optional[str], typer.Option(help='Build the question from columns, e.g. "{Issue}\\n\\nFacts: {Facts}"')] = None,
     assistant_template: Annotated[Optional[str], typer.Option(help='Build the answer from columns, e.g. "{Decision}\\n\\n{Reasons}"')] = None,
     base_model: Annotated[str, typer.Option(help="Base model to train")] = config.DEFAULT_BASE_MODEL,
+    hold_out: Annotated[bool, typer.Option(help="Keep ~10% back as a test set for `trainloop score`")] = True,
 ):
     """Build a run from a ready-made dataset. No documents, no generator, no cost."""
     from . import datasets
@@ -163,15 +180,16 @@ def dataset(
         typer.secho(str(e), fg="red")
         raise typer.Exit(1)
 
-    report = validate_jsonl(out, config.BASE_MODEL_TRAIN_CTX.get(base_model))
     typer.echo(f"{count:,} rows from {hf or file.name}")
+    held = _hold_out(run_dir, hold_out)
+    report = validate_jsonl(out, config.BASE_MODEL_TRAIN_CTX.get(base_model))
     typer.echo(report.summary())
     _save(run_dir, {
         "name": run, "goal": goal, "base_model": base_model,
         "source": {"hf": hf, "file": str(file) if file else None, "config": config_name,
                    "split": split, "limit": limit, "templates": list(templates) if templates else None},
         "system_prompt": goal, "rows": report.valid, "est_tokens": report.est_tokens,
-        "trainer": config.trainer_for(base_model),
+        "trainer": config.trainer_for(base_model), "test_rows": held,
     })
     typer.secho(f"Wrote {out}. Next: trainloop plan --run {run}", fg="green" if report.ok else "red")
 
@@ -336,7 +354,9 @@ def train(
         _save(run_dir, state)
     if trainer in ("tinker", "unsloth"):
         if trainer == "unsloth":
-            _train_unsloth(run_dir, state, yes, held_out)
+            # The run's held-back test set, scored on the GPU after training (free: no extra job)
+            test = run_dir / "test.jsonl"
+            _train_unsloth(run_dir, state, yes, held_out or (test if test.exists() else None))
         else:
             _train_tinker(run_dir, state, yes)
         return
@@ -623,6 +643,80 @@ def fetch(
         state["hf_repo"] = url
         _save(run_dir, state)
         typer.secho(f"Pushed to {url} (private)", fg="green")
+
+
+@app.command()
+def score(
+    run: RunOpt,
+    frontier: Annotated[str, typer.Option(help="Frontier model on OpenRouter to compare against")] = "openai/gpt-6-astra",
+    no_frontier: Annotated[bool, typer.Option("--no-frontier", help="Only the original and the trained model")] = False,
+    limit: Annotated[Optional[int], typer.Option(min=1, help="Score on the first N held-back examples")] = None,
+    yes: Annotated[bool, typer.Option("--yes", help="Skip the confirmation prompt")] = False,
+):
+    """The Scorecard: original vs trained vs a frontier model on the held-back test set (costs a little)."""
+    from . import score as sc
+
+    run_dir = _run_dir(run)
+    state = _load(run_dir)
+    tests = holdout.load(run_dir / "test.jsonl")[:limit]
+    if not tests:
+        typer.secho("This run has no held-back test set. Import the data again (runs made before 24 Sep 2026, or "
+                    f"with fewer than {holdout.MIN_EXAMPLES} examples, have none).", fg="red")
+        raise typer.Exit(1)
+    metric = sc.metric_for([t[-1]["content"] for t in tests])
+    max_tokens = 64 if metric == "exact" else 800
+    public = bool((state.get("source") or {}).get("hf"))
+    trainer = config.trainer_for(state["base_model"])
+    notes: list[str] = []
+
+    answerers: dict = {}
+    if trainer == "tinker":
+        answerers.update(sc.tinker_answerers(state, max_tokens))
+    elif trainer == "fireworks":
+        notes.append("Fireworks models need a deployment before they can answer; not wired yet.")
+    key = None
+    if not no_frontier or metric == "judge":
+        key = config.require("OPENROUTER_API_KEY")
+    if not no_frontier:
+        answerers["frontier"] = sc.openrouter_answerer(frontier, key, zdr=not public, max_tokens=max_tokens)
+        if not public:
+            notes.append(f"Your data went to {frontier} on zero-data-retention hosts only.")
+    judge = sc.judge_marker(sc.DEFAULT_JUDGE, key) if metric == "judge" else None
+
+    est = sc.estimate_frontier_cost(tests, frontier, max_tokens) if not no_frontier else None
+    typer.echo(f"Scoring {len(tests)} held-back examples ({'exact match' if metric == 'exact' else 'judged by ' + sc.DEFAULT_JUDGE}): "
+               f"{', '.join(answerers) or 'nothing to sample'}"
+               + (f"; the frontier model costs about ${est:.2f}" if est is not None else ""))
+    if not answerers:
+        typer.secho("Nothing can answer yet: " + " ".join(notes), fg="red")
+        raise typer.Exit(1)
+    if not yes:
+        typer.confirm("This spends a little on the trainer and OpenRouter. Continue?", abort=True)
+
+    out = run_dir / "scorecard.json"
+    previous = sc.load_previous(out)
+    # The original model and the frontier don't change: reuse their scores rather than pay twice
+    reuse = ("original",) + (("frontier",) if previous and previous.get("frontier_model") == frontier else ())
+    try:
+        card = sc.score(tests, answerers, judge=judge, metric=metric, previous=previous, reuse=reuse)
+    except sc.ScoreError as e:
+        typer.secho(str(e), fg="red", err=True)
+        raise typer.Exit(1)
+    # A Hugging Face GPU run scored the original and trained model on the same set during training
+    gpu = sc.load_previous(run_dir / "unsloth" / "held_out.json")
+    if trainer == "unsloth" and gpu and metric == "exact":
+        for name in ("original", "trained"):
+            if isinstance(gpu.get(name), (int, float)):
+                card["contenders"][name] = {"score": gpu[name], "correct": round(gpu[name] * len(tests)), "from": "GPU job"}
+    card.update(base_model=state["base_model"], frontier_model=None if no_frontier else frontier, public=public, notes=notes)
+    out.write_text(json.dumps(card, indent=2))
+
+    labels = {"original": f"original ({state['base_model'].split('/')[-1]})", "trained": "trained (yours)",
+              "frontier": f"frontier ({frontier})"}
+    for name, c in card["contenders"].items():
+        typer.echo(f"  {labels.get(name, name):45} {c['score']:.1%}{'  (reused)' if c.get('reused') else ''}")
+    for n in notes:
+        typer.echo(f"  note: {n}")
 
 
 @app.command()

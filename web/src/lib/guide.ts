@@ -5,7 +5,7 @@ import type { Settings } from "./settings";
 // The guide (the logo button) talks to the page through here: it asks for actions, and the page
 // keeps it told what's on screen. Actions only fill in the form; nothing here can start training.
 
-export type GuideTarget = "model" | "dataset" | "parameters" | "configuration" | "preview" | "tabs";
+export type GuideTarget = "model" | "dataset" | "parameters" | "configuration" | "preview" | "tabs" | "scorecard";
 
 export type GuideAction =
   | { type: "set_model"; query: string }

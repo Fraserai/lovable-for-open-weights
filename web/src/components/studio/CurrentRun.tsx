@@ -4,7 +4,9 @@ import { useState } from "react";
 import { shortModel, trainerOf, useRun } from "@/lib/client";
 import { TRAINERS, type Trainer } from "@/lib/models";
 import type { RunStatus } from "@/lib/runs";
+import { BRAND } from "@/lib/brand";
 import Chart from "../Chart";
+import Scorecard from "./Scorecard";
 import { External } from "../icons";
 import { btn, Dot, duration, ErrorNote, input, Pill, sci } from "../ui";
 
@@ -114,6 +116,7 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
           {t.state === "done" && (
             <div className="mt-8 border-t border-line pt-6">
               <p className="text-[13px] tracking-[0.08em] text-muted uppercase">Your model</p>
+              <p className="mt-1 text-[15px]">{BRAND.lines[3]}</p>
               {t.hfRepo ? (
                 <a href={t.hfRepo} target="_blank" rel="noreferrer" className={`${btn.ghost} mt-4 w-full`}>
                   {t.hfRepo.replace("https://huggingface.co/", "")} <External className="size-3.5" />
@@ -137,6 +140,8 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
                empty={trainer === "Fireworks" ? "Fireworks reports metrics when the job ends." : undefined} />
         <Chart title="Learning Rate" format={sci} points={t.metrics.filter((m) => m.lr != null).map((m) => ({ x: m.step, y: m.lr! }))} />
       </div>
+
+      <Scorecard run={run} bump={() => bump()} />
 
       {t.canChat && <TalkToModel id={run.id} model={shortModel(run.baseModel)} />}
     </div>

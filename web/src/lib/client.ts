@@ -39,7 +39,8 @@ export function useRun(id: string | null, justLaunched = false) {
         const launching = next.train.state === "waiting" && Date.now() < graceUntil.current;
         if (launching) next = { ...next, train: { ...next.train, state: "running" } };
         setRun(next);
-        const moving = launching || next.status === "running" || next.train.state === "running" || next.train.handback === "running";
+        const moving = launching || next.status === "running" || next.train.state === "running" || next.train.handback === "running"
+          || next.scoring.state === "running";
         if (!moving) return;
       }
       timer = setTimeout(tick, 2000);

@@ -82,7 +82,8 @@ export default function DatasetCard({ source, onSource, info, onInfo, systemProm
             </p>
           </div>
           {draft?.status === "done" && (draft.stages.check === "done"
-            ? <Pill tone="accent">{draft.rows?.toLocaleString()} rows pass</Pill> : <Pill tone="bad">Rows failed checks</Pill>)}
+            ? <Pill tone="accent">{draft.rows?.toLocaleString()} rows pass{draft.testRows ? ` · ${draft.testRows} held back to score` : ""}</Pill>
+            : <Pill tone="bad">Rows failed checks</Pill>)}
           <button type="button" onClick={() => setViewing(true)} disabled={!info && !draft?.sample.length} className={`${btn.quiet} disabled:opacity-40`}>
             <Eye className="size-4" /> View dataset
           </button>

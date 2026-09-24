@@ -48,3 +48,11 @@ export const modelKey = (m: ModelOption) => (m.hfRepo ?? m.id).toLowerCase();
 
 // Matches what the worker can ingest today (worker/src/trainloop/ingest.py), plus ready-made datasets.
 export const ACCEPTED_FILES = ".pdf,.docx,.pptx,.html,.md,.txt,.jsonl";
+
+/** Frontier models the Scorecard can compare against (OpenRouter ids). */
+export const FRONTIERS = [
+  { id: "openai/gpt-6-astra", name: "GPT-6 Astra" },
+  { id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5" },
+  { id: "google/gemini-3.8-flash", name: "Gemini 3.8 Flash" },
+  { id: "openai/gpt-6-sol", name: "GPT-6 Sol" },
+];
