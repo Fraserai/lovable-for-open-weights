@@ -70,6 +70,7 @@ function toOption(e: Entry): ModelOption {
     hfRepo: e.hf_repo,
     note: [fmtParams(e.params), fmtCtx(e.train_context_tokens), "LoRA"].filter(Boolean).join(" · "),
     ready: WIRED.includes(trainer),
+    size: fmtParams(e.params),
   };
 }
 
@@ -84,7 +85,10 @@ export async function trainableModels(): Promise<ModelOption[]> {
 const HF_ID = /^[\w.-]+\/[\w.-]+$/;
 
 function unslothOption(repo: string, note = "cloud GPU · LoRA"): ModelOption {
-  return { id: `unsloth:${repo}`, name: repo, trainer: "Unsloth", hfRepo: repo, note, ready: WIRED.includes("Unsloth") };
+  // Most Hub repos put the size in the name (Qwen3.5-4B, gemma-4-26b-a4b)
+  const size = repo.match(/(\d+(?:\.\d+)?)[bB](?![a-z])/)?.[1];
+  return { id: `unsloth:${repo}`, name: repo.split("/").pop() ?? repo, trainer: "Unsloth", hfRepo: repo, note,
+    ready: WIRED.includes("Unsloth"), size: size ? `${size}B` : null };
 }
 
 export async function findTrainable(id: string): Promise<ModelOption | undefined> {

@@ -50,6 +50,19 @@ def main() -> None:
     p.add_argument("--lora-rank", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--max-seq-length", type=int, default=32768)
+    p.add_argument("--max-steps", type=int, default=-1)
+    p.add_argument("--grad-accum", type=int, default=1)
+    p.add_argument("--lora-alpha", type=int, help="Default: the rank")
+    p.add_argument("--lora-dropout", type=float, default=0.0)
+    p.add_argument("--target-modules", default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj")
+    p.add_argument("--rslora", action="store_true")
+    p.add_argument("--load-in-4bit", action="store_true", help="QLoRA: 4-bit base weights")
+    p.add_argument("--optim", default="adamw_8bit")
+    p.add_argument("--lr-scheduler", default="linear")
+    p.add_argument("--weight-decay", type=float, default=0.0)
+    p.add_argument("--warmup-steps", type=int, help="Default: 5%% of steps, 1-10")
+    p.add_argument("--seed", type=int, default=3407)
+    p.add_argument("--gradient-checkpointing", default="unsloth", choices=["unsloth", "true", "false"])
     p.add_argument("--eval", help="Optional held-out JSONL: messages ending in the expected assistant reply")
     a = p.parse_args()
     token = os.environ["HF_TOKEN"]
@@ -63,7 +76,8 @@ def main() -> None:
 
     emit("loading", model=a.base_model, gpu=torch.cuda.get_device_name(0))
     model, processor = FastLanguageModel.from_pretrained(
-        model_name=a.base_model, max_seq_length=a.max_seq_length, load_in_4bit=False, load_in_16bit=True,
+        model_name=a.base_model, max_seq_length=a.max_seq_length, load_in_4bit=a.load_in_4bit,
+        load_in_16bit=not a.load_in_4bit,
         full_finetuning=False, token=token,
     )
     # Multimodal checkpoints (e.g. Qwen3.5) come with a processor; text training uses its tokenizer.
@@ -101,10 +115,11 @@ def main() -> None:
         fail(f"Only {len(rows)} of {total} examples fit {a.base_model}'s chat format as checked "
              f"({unusable} didn't match, {too_long} too long). Nothing was trained.")
 
+    checkpointing = {"unsloth": "unsloth", "true": True, "false": False}[a.gradient_checkpointing]
     model = FastLanguageModel.get_peft_model(
-        model, r=a.lora_rank, lora_alpha=a.lora_rank, lora_dropout=0, bias="none",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        use_gradient_checkpointing="unsloth", random_state=3407, max_seq_length=a.max_seq_length,
+        model, r=a.lora_rank, lora_alpha=a.lora_alpha or a.lora_rank, lora_dropout=a.lora_dropout, bias="none",
+        target_modules=a.target_modules.split(","), use_rslora=a.rslora,
+        use_gradient_checkpointing=checkpointing, random_state=a.seed, max_seq_length=a.max_seq_length,
     )
 
     class Progress(TrainerCallback):
@@ -113,17 +128,21 @@ def main() -> None:
                 emit("step", step=state.global_step, total=state.max_steps, loss=logs["loss"],
                      learning_rate=logs.get("learning_rate"), epoch=logs.get("epoch"))
 
-    steps = -(-len(rows) // a.batch_size) * a.epochs
+    steps = -(-len(rows) // (a.batch_size * a.grad_accum)) * a.epochs
+    if a.max_steps > 0:
+        steps = min(steps, a.max_steps)
     trainer = Trainer(
         model=model,
         train_dataset=Dataset.from_list(rows),
         data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100),
         callbacks=[Progress()],
         args=TrainingArguments(
-            output_dir="/tmp/out", per_device_train_batch_size=a.batch_size, gradient_accumulation_steps=1,
-            num_train_epochs=a.epochs, learning_rate=a.learning_rate, lr_scheduler_type="linear",
-            warmup_steps=max(1, min(10, steps // 20)), optim="adamw_8bit", weight_decay=0.0,
-            bf16=True, logging_steps=1, save_strategy="no", report_to="none", seed=3407,
+            output_dir="/tmp/out", per_device_train_batch_size=a.batch_size, gradient_accumulation_steps=a.grad_accum,
+            num_train_epochs=a.epochs, max_steps=a.max_steps, learning_rate=a.learning_rate,
+            lr_scheduler_type=a.lr_scheduler,
+            warmup_steps=a.warmup_steps if a.warmup_steps is not None else max(1, min(10, steps // 20)),
+            optim=a.optim, weight_decay=a.weight_decay,
+            bf16=True, logging_steps=1, save_strategy="no", report_to="none", seed=a.seed,
             remove_unused_columns=False,
         ),
     )
