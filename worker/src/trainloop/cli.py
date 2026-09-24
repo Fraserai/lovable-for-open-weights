@@ -462,7 +462,7 @@ def _train_unsloth(run_dir: Path, state: dict, yes: bool, held_out: Optional[Pat
         raise typer.Exit(1)
 
     typer.echo(
-        f"Base model:    {unsloth.hf_id(state['base_model'])} (Unsloth on a Hugging Face {p['gpu']})\n"
+        f"Base model:    {unsloth.hf_id(state['base_model'])} (Hugging Face {p['gpu']} GPU)\n"
         f"Examples:      {p['examples']:,} x {p['epochs']} epoch(s) = {p['steps']} steps, ~{p['tokens']:,} training tokens\n"
         f"Settings:      LoRA rank {p['lora_rank']}, learning rate {p['learning_rate']:.2e}, 16-bit\n"
         f"Cost:          ${p['per_hour']}/hr, billed by the second; at most ${p['max_cost']:.2f} "
@@ -658,7 +658,18 @@ def catalog(
     """Show which open models each trainer can fine-tune (live sources)."""
     from .catalog import build_catalog
 
-    entries = build_catalog()
+    failures: dict[str, str] = {}
+    entries = build_catalog(failures=failures)
+    for name, reason in failures.items():
+        typer.secho(f"Couldn't read the {name} model list: {reason}", fg="yellow", err=True)
+    # A trainer whose list couldn't be read keeps its models from the last catalog written
+    if failures and json_out and json_out.exists():
+        try:
+            previous = json.loads(json_out.read_text())
+        except (OSError, ValueError):
+            previous = []
+        if isinstance(previous, list):
+            entries += [e for e in previous if isinstance(e, dict) and e.get("trainer") in failures]
     if trainer:
         entries = [e for e in entries if e["trainer"] == trainer.lower()]
     if not entries:

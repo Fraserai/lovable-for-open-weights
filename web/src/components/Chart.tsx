@@ -44,7 +44,8 @@ export default function Chart({ title, points, smooth = false, format = fmt, emp
   const sx = (x: number) => PAD.l + (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0)) * (W - PAD.l - PAD.r);
   const sy = (y: number) => PAD.t + (1 - (y - y0) / (y1 - y0)) * (H - PAD.t - PAD.b);
   const path = (ps: Point[]) => ps.map((p, i) => `${i ? "L" : "M"}${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join("");
-  const ticks = [y1 - pad, (y0 + y1) / 2, y0 + pad];
+  // A flat line (constant learning rate) puts all three on one value: draw it once
+  const ticks = [...new Set([y1 - pad, (y0 + y1) / 2, y0 + pad])];
   const h = hover !== null ? line[hover] : null;
   const last = line.at(-1);
 

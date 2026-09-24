@@ -144,10 +144,10 @@ export default function ParamsCard({ s, set, trainer, plan }: {
               )}
               {hyperTab === "memory" && (
                 <>
-                  <Row label="Gradient Checkpointing" hint="Recomputes activations to save memory. Unsloth's version is fastest." note={why("gradient_checkpointing")} disabled={off("gradient_checkpointing")}>
+                  <Row label="Gradient Checkpointing" hint="Recomputes activations to save memory. The default is the fastest." note={why("gradient_checkpointing")} disabled={off("gradient_checkpointing")}>
                     <Select value={s.gradient_checkpointing ?? "unsloth"} disabled={off("gradient_checkpointing")}
                             onChange={(v) => set({ gradient_checkpointing: v === "unsloth" ? undefined : v })}
-                            options={[{ value: "unsloth", label: "Unsloth" }, { value: "true", label: "On" }, { value: "false", label: "Off" }]} />
+                            options={[{ value: "unsloth", label: "Default" }, { value: "true", label: "On" }, { value: "false", label: "Off" }]} />
                   </Row>
                   <Row label="4-bit base (QLoRA)" hint="Set with Method in the Model card.">
                     <p className="text-right text-[15px] text-muted">{s.method === "qlora" ? "On" : "Off"}</p>

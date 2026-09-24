@@ -77,12 +77,9 @@ def _hf_repo(url) -> str | None:
     return url[len(prefix):] if isinstance(url, str) and url.startswith(prefix) else None
 
 
-def build_catalog(transport: httpx.BaseTransport | None = None) -> list[dict]:
-    """Fetch both trainer sources and return one entry per model per trainer."""
-    entries: list[dict] = []
-
-    fw_text = _get(FIREWORKS_MODELS_URL, transport)
-    for m in _fireworks_models(fw_text):
+def _fireworks_entries(transport: httpx.BaseTransport | None) -> list[dict]:
+    entries = []
+    for m in _fireworks_models(_get(FIREWORKS_MODELS_URL, transport)):
         dpo = m.get("managedDpoLora")
         entries.append({
             "trainer": "fireworks",
@@ -95,19 +92,35 @@ def build_catalog(transport: httpx.BaseTransport | None = None) -> list[dict]:
             "dpo": dpo if isinstance(dpo, bool) else None,
             "train_price": None,
         })
+    return entries
 
-    tk_text = _get(TINKER_MODELS_URL, transport)
-    for m in json.loads(tk_text):
-        entries.append({
-            "trainer": "tinker",
-            "trainer_model_id": m["tinker_id"],
-            "display_name": m["name"],
-            "hf_repo": _hf_repo(m.get("url")),
-            "params": m.get("params"),
-            "train_context_tokens": _context_to_tokens(m.get("context")),
-            "sft_lora": True,
-            "dpo": None,  # per-model DPO support is not published in models.json
-            "train_price": m.get("train"),
-        })
 
+def _tinker_entries(transport: httpx.BaseTransport | None) -> list[dict]:
+    return [{
+        "trainer": "tinker",
+        "trainer_model_id": m["tinker_id"],
+        "display_name": m["name"],
+        "hf_repo": _hf_repo(m.get("url")),
+        "params": m.get("params"),
+        "train_context_tokens": _context_to_tokens(m.get("context")),
+        "sft_lora": True,
+        "dpo": None,  # per-model DPO support is not published in models.json
+        "train_price": m.get("train"),
+    } for m in json.loads(_get(TINKER_MODELS_URL, transport))]
+
+
+def build_catalog(transport: httpx.BaseTransport | None = None, failures: dict[str, str] | None = None) -> list[dict]:
+    """Fetch both trainer sources and return one entry per model per trainer.
+
+    With `failures`, a source that can't be read is recorded there (trainer -> reason) and the other
+    trainer's models are still returned; without it, the first failure raises.
+    """
+    entries: list[dict] = []
+    for trainer, fetch in (("fireworks", _fireworks_entries), ("tinker", _tinker_entries)):
+        try:
+            entries += fetch(transport)
+        except (httpx.HTTPError, CatalogError, ValueError, KeyError, TypeError) as e:
+            if failures is None:
+                raise
+            failures[trainer] = str(e) or type(e).__name__
     return entries
