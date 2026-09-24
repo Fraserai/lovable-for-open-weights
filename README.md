@@ -52,5 +52,5 @@ Which trainer honours which setting lives in `worker/src/trainloop/settings.py` 
   `worker/scripts/banking77_score.py <run>`. The Kimi run's result is also on its Scorecard in the app.
 - **Trainers:** Tinker is proven end to end. Fireworks and Hugging Face GPU jobs are wired and their
   plans verified; neither has trained live yet. **All three accounts are currently out of credit.**
-- **Not production-ready:** no login or billing, and training runs as a process of the dev server,
-  so stopping the server stops training. Needs a real job runner before customers.
+- **Not production-ready:** no login or billing yet, and jobs run on this machine (they survive a web
+  server restart, not a reboot). Needs accounts and a hosted job runner before customers.

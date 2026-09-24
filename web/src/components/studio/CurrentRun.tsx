@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { shortModel, trainerOf, useRun } from "@/lib/client";
+import { formatBytes, shortModel, trainerOf, useRun } from "@/lib/client";
 import { TRAINERS, type Trainer } from "@/lib/models";
 import type { RunStatus } from "@/lib/runs";
 import { BRAND } from "@/lib/brand";
@@ -28,10 +28,12 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const act = async (path: "train" | "fetch") => {
+  const act = async (path: "train" | "fetch", body?: object) => {
     setBusy(true);
     setError(null);
-    const res = await fetch(`/api/runs/${run.id}/${path}`, { method: "POST" });
+    const res = await fetch(`/api/runs/${run.id}/${path}`, {
+      method: "POST", ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+    });
     if (!res.ok) setError((await res.json().catch(() => ({}))).error ?? "Could not start.");
     else bump(path === "train");
     setBusy(false);
@@ -117,13 +119,26 @@ function Body({ run, bump }: { run: RunStatus; bump: (launched?: boolean) => voi
             <div className="mt-8 border-t border-line pt-6">
               <p className="text-[13px] tracking-[0.08em] text-muted uppercase">Your model</p>
               <p className="mt-1 text-[15px]">{BRAND.lines[3]}</p>
+              {t.localModel ? (
+                <a href={`/api/runs/${run.id}/download`} download className={`${btn.primary} mt-4 w-full`}>
+                  Download weights <span className="font-normal opacity-80">· {formatBytes(t.localModel.bytes)}</span>
+                </a>
+              ) : (
+                <button type="button" onClick={() => act("fetch", { publish: false })} disabled={t.handback === "running" || busy}
+                        className={`${btn.primary} mt-4 w-full`}>
+                  {t.handback === "running" ? "Getting the weights…" : "Get the weights"}
+                </button>
+              )}
+              <p className="mt-2 text-xs text-faint">
+                A LoRA adapter for {run.baseModel?.replace(/^unsloth:/, "")}: load it on top of that model with PEFT, vLLM or Unsloth.
+              </p>
               {t.hfRepo ? (
                 <a href={t.hfRepo} target="_blank" rel="noreferrer" className={`${btn.ghost} mt-4 w-full`}>
                   {t.hfRepo.replace("https://huggingface.co/", "")} <External className="size-3.5" />
                 </a>
               ) : (
                 <>
-                  <button type="button" onClick={() => act("fetch")} disabled={t.handback === "running" || busy} className={`${btn.primary} mt-4 w-full`}>
+                  <button type="button" onClick={() => act("fetch")} disabled={t.handback === "running" || busy} className={`${btn.ghost} mt-4 w-full`}>
                     {t.handback === "running" ? "Publishing…" : "Publish to Hugging Face"}
                   </button>
                   <p className="mt-2 text-xs text-faint">{t.handback === "failed" ? "That didn't finish. Try again; nothing gets retrained." : "The LoRA adapter, in a private repo on your account."}</p>

@@ -58,6 +58,8 @@ export type TrainProgress = {
   epochs: number | null;
   loraRank: number | null;
   jobUrl: string | null;
+  /** The trained adapter saved on this machine (runs/<id>/model), ready to download */
+  localModel: { bytes: number } | null;
   /** One point per logged step, thinned to at most MAX_POINTS for the charts. */
   metrics: { step: number; loss: number; lr: number | null }[];
   elapsedSec: number | null;
@@ -322,9 +324,31 @@ async function trainProgress(dir: string, run: Record<string, unknown> | null): 
     epochs: typeof run?.epochs === "number" ? run.epochs : (plan as { epochs?: number }).epochs ?? null,
     loraRank: typeof run?.lora_rank === "number" ? run.lora_rank : (plan as { lora_rank?: number }).lora_rank ?? null,
     jobUrl: typeof run?.job_url === "string" ? run.job_url : null,
+    localModel: await localModel(dir),
     metrics: points.filter((_, i) => i % stride === 0 || i === points.length - 1).map(({ step, loss, lr }) => ({ step, loss, lr })),
     elapsedSec: secs.length ? Math.round(secs.reduce((a, b) => a + b, 0)) : null,
   };
+}
+
+/** The downloaded adapter's total size, if the run has one on disk. */
+async function localModel(dir: string): Promise<{ bytes: number } | null> {
+  const names = await readdir(path.join(dir, "model")).catch(() => [] as string[]);
+  if (!names.some((n) => n.endsWith(".safetensors"))) return null;
+  const sizes = await Promise.all(names.map((n) => stat(path.join(dir, "model", n)).then((s) => s.size, () => 0)));
+  return { bytes: sizes.reduce((a, b) => a + b, 0) };
+}
+
+/** The adapter folder as a .tar.gz stream (Mac and Windows both open it with a double-click). */
+export function modelArchive(id: string): ReadableStream<Uint8Array> {
+  const child = spawn("tar", ["-czf", "-", "-C", runDir(id), "model"], { stdio: ["ignore", "pipe", "ignore"] });
+  return new ReadableStream({
+    start(controller) {
+      child.stdout.on("data", (d: Buffer) => controller.enqueue(new Uint8Array(d)));
+      child.stdout.on("end", () => controller.close());
+      child.on("error", (e) => controller.error(e));
+    },
+    cancel() { child.kill(); },
+  });
 }
 
 /** Ask the original and the trained model the same question (Tinker runs). */
@@ -334,11 +358,12 @@ export async function chat(id: string, message: string): Promise<{ original: str
 }
 
 /** Download the trained model and publish it to a private repo on the user's Hugging Face account. */
-export async function startFetch(id: string): Promise<void> {
+/** Download the trained adapter to this machine, and (publish) push it to a private Hugging Face repo. */
+export async function startFetch(id: string, publish = true): Promise<void> {
   const dir = runDir(id);
   const record = (status: "running" | "done" | "failed", pid?: number) =>
     writeFile(path.join(dir, "fetch.json"), JSON.stringify({ status, pid })).catch(() => {});
-  const pid = launch(["fetch", "--run", id, "--hf-repo", "auto"], path.join(dir, "fetch.log"), {
+  const pid = launch(["fetch", "--run", id, ...(publish ? ["--hf-repo", "auto"] : [])], path.join(dir, "fetch.log"), {
     onExit: (code) => record(code === 0 ? "done" : "failed"),
   });
   await record("running", pid);
