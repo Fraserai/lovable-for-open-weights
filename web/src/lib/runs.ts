@@ -200,12 +200,20 @@ export async function deleteDraft(id: string): Promise<boolean> {
 /** Starts the paid training run in the background; progress is read back by getStatus. */
 export async function startTraining(id: string): Promise<void> {
   const dir = runDir(id);
+  const launch = path.join(dir, "launch.json");
+  await rm(launch, { force: true });
   const log = createWriteStream(path.join(dir, "train.log"), { flags: "a" });
   const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", "train", "--run", id, "--yes"],
     { env: { ...process.env, ...WORKER_ENV, PYTHONUNBUFFERED: "1" } });
+  let out = "";
+  child.stdout.on("data", (d) => (out = (out + d).slice(-8000)));
+  child.stderr.on("data", (d) => (out = (out + d).slice(-8000)));
   child.stdout.pipe(log);
   child.stderr.pipe(log);
-  child.on("error", (e) => log.write(`\nCould not start the trainer: ${e.message}\n`));
+  // If the worker stops before the trainer takes the job (a missing key, say), say why instead of waiting forever
+  const failed = (error: string) => writeFile(launch, JSON.stringify({ error })).catch(() => {});
+  child.on("error", (e) => { log.write(`\nCould not start the trainer: ${e.message}\n`); failed(`Could not start the trainer: ${e.message}`); });
+  child.on("close", (code) => { if (code !== 0) failed(lastError(stripAnsi(out).split("\n"))); });
 }
 
 async function trainProgress(dir: string, run: Record<string, unknown> | null): Promise<TrainProgress> {
@@ -227,10 +235,13 @@ async function trainProgress(dir: string, run: Record<string, unknown> | null): 
   });
   const stride = Math.ceil(points.length / MAX_POINTS);
   const secs = points.map((p) => p.sec).filter((x): x is number => typeof x === "number");
+  // Set when the worker stopped before any job existed (see startTraining)
+  const launch = jobState ? null : await readOr<{ error?: string } | null>(path.join(dir, "launch.json"), JSON.parse, null);
   const state: TrainProgress["state"] =
     jobState === "JOB_STATE_COMPLETED" ? "done"
     : jobState === "JOB_STATE_FAILED" ? "failed"
     : jobState ? "running"
+    : launch ? "failed"
     : "waiting";
   const hfRepo = typeof run?.hf_repo === "string" ? run.hf_repo : null;
   const fetch = await readOr<{ status: "running" | "done" | "failed" } | null>(path.join(dir, "fetch.json"), JSON.parse, null);
@@ -238,7 +249,7 @@ async function trainProgress(dir: string, run: Record<string, unknown> | null): 
     state,
     steps,
     totalSteps: plan.steps ?? null,
-    error: typeof run?.error === "string" ? run.error : null,
+    error: typeof run?.error === "string" ? run.error : launch?.error ?? null,
     hfRepo,
     handback: hfRepo ? "idle" : fetch?.status === "running" ? "running" : fetch?.status === "failed" ? "failed" : "idle",
     canChat: state === "done" && run?.job === "tinker",

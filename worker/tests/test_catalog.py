@@ -118,3 +118,40 @@ def test_changed_fireworks_format_raises_clear_error():
 def test_two_trainers_merged():
     entries = build_catalog(mock_transport(FW_PAGE, TINKER_JSON))
     assert [e["trainer"] for e in entries] == ["fireworks", "fireworks", "tinker", "tinker"]
+
+def test_one_unreadable_source_keeps_the_other():
+    def handler(request: httpx.Request):
+        if "fireworks.ai" in request.url.host:
+            return httpx.Response(403, text="blocked")
+        return httpx.Response(200, text=TINKER_JSON)
+
+    failures: dict[str, str] = {}
+    entries = build_catalog(httpx.MockTransport(handler), failures=failures)
+    assert [e["trainer"] for e in entries] == ["tinker", "tinker"]
+    assert list(failures) == ["fireworks"]
+    # Without a failures dict the first failure still raises, as before
+    with pytest.raises(httpx.HTTPStatusError):
+        build_catalog(httpx.MockTransport(handler))
+
+
+def test_catalog_command_keeps_last_known_models_for_an_unreadable_trainer(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from trainloop import catalog as catalog_mod
+    from trainloop.cli import app
+
+    out = tmp_path / "catalog.json"
+    out.write_text(json.dumps([
+        {"trainer": "fireworks", "trainer_model_id": "accounts/fireworks/models/glm-5p3-flash"},
+        {"trainer": "tinker", "trainer_model_id": "old-tinker-model"},
+    ]))
+
+    def fake_build(transport=None, failures=None):
+        failures["fireworks"] = "403 Forbidden"
+        return [{"trainer": "tinker", "trainer_model_id": "new-tinker-model"}]
+
+    monkeypatch.setattr(catalog_mod, "build_catalog", fake_build)
+    result = CliRunner().invoke(app, ["catalog", "--json", str(out)])
+    assert result.exit_code == 0, result.output
+    ids = [e["trainer_model_id"] for e in json.loads(out.read_text())]
+    assert ids == ["new-tinker-model", "accounts/fireworks/models/glm-5p3-flash"]
