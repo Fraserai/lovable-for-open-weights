@@ -9,6 +9,7 @@ ones onto chat messages and say plainly when a row doesn't fit.
 
 import json
 import re
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -17,6 +18,7 @@ import httpx
 ROWS_URL = "https://datasets-server.huggingface.co/rows"
 SPLITS_URL = "https://datasets-server.huggingface.co/splits"
 PAGE = 100  # datasets-server's maximum rows per request
+RETRIES = 4  # the dataset viewer has brief 429/5xx hiccups; a big import makes many requests
 
 # (user field, assistant field) pairs seen in public instruction datasets, matched case-insensitively.
 # "issue"/"decision" covers ATO Interpretative Decisions and similar ruling datasets.
@@ -105,10 +107,26 @@ def from_jsonl(path: Path, fields: tuple[str, str] | None = None,
                 yield messages
 
 
+def _get(c: httpx.Client, url: str, params: dict, pause: float = 1.0) -> httpx.Response:
+    """GET with retries on temporary failures (rate limits, 5xx, dropped connections), backing off 1-2-4-8s."""
+    for attempt in range(RETRIES + 1):
+        try:
+            resp = c.get(url, params=params)
+            if resp.status_code != 429 and resp.status_code < 500:
+                return resp
+        except httpx.TransportError:
+            if attempt == RETRIES:
+                raise
+            resp = None
+        if attempt < RETRIES:
+            time.sleep(pause * 2 ** attempt)
+    return resp
+
+
 def hub_splits(repo: str, client: httpx.Client | None = None) -> list[tuple[str, str]]:
     c = client or httpx.Client(timeout=60)
     try:
-        resp = c.get(SPLITS_URL, params={"dataset": repo})
+        resp = _get(c, SPLITS_URL, {"dataset": repo})
         if resp.is_error:
             raise DatasetError(f"Hugging Face couldn't list splits for {repo}: {resp.status_code}")
         return [(s["config"], s["split"]) for s in resp.json().get("splits", [])]
@@ -132,8 +150,8 @@ def from_hub(repo: str, split: str | None = None, config: str | None = None, lim
         )
         sent = 0
         for offset in range(0, limit, PAGE):
-            resp = c.get(ROWS_URL, params={"dataset": repo, "config": config, "split": split,
-                                           "offset": offset, "length": min(PAGE, limit - sent)})
+            resp = _get(c, ROWS_URL, {"dataset": repo, "config": config, "split": split,
+                                      "offset": offset, "length": min(PAGE, limit - sent)})
             if resp.is_error:
                 raise DatasetError(f"Hugging Face returned {resp.status_code} for {repo} ({config}/{split}).")
             rows = resp.json().get("rows", [])

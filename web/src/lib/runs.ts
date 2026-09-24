@@ -2,7 +2,7 @@ import "server-only";
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { closeSync, fstatSync, openSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { toWorker, type Settings } from "./settings";
@@ -99,7 +99,41 @@ export type RunStatus = {
 };
 
 // goal/baseModel: known before the worker writes run.json, so a preparing run can be shown
-type WebState = { status: RunStatus["status"]; exitCode: number | null; startedAt: string; goal?: string; baseModel?: string };
+// pid: the worker process, so a restarted server can tell a step that's still going from one that died
+type WebState = { status: RunStatus["status"]; exitCode: number | null; startedAt: string; goal?: string; baseModel?: string; pid?: number };
+
+/** Starts a long worker step (writing examples, training, publishing) that outlives this server: its own
+ * process group, output straight into a log file. A pipe back to us would break when the dev server stops,
+ * and take a paid training run down with it. `onText` sees the step's new log output every 2s while we're up. */
+function launch(args: string[], logFile: string, handlers: {
+  onText?: (text: string, stop: () => void) => void;
+  onExit?: (code: number | null, text: string) => void;
+}) {
+  const fd = openSync(logFile, "a");
+  const from = fstatSync(fd).size; // only this step's output, not earlier attempts in the same log
+  // Args array, no shell: user text can't be interpreted as a command.
+  const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", ...args],
+    { env: { ...process.env, ...WORKER_ENV }, detached: true, stdio: ["ignore", fd, fd] });
+  closeSync(fd);
+  child.unref();
+  const read = () => readFile(logFile).then((b) => stripAnsi(b.subarray(from).toString()), () => "");
+  const stop = () => { try { process.kill(-child.pid!, "SIGTERM"); } catch { /* already gone */ } };
+  const timer = setInterval(() => { if (handlers.onText) read().then((t) => handlers.onText!(t, stop)); }, 2000);
+  child.on("error", (e) => { clearInterval(timer); handlers.onExit?.(-1, `Could not start the worker: ${e.message}`); });
+  child.on("exit", (code) => { clearInterval(timer); read().then((t) => { handlers.onText?.(t, stop); handlers.onExit?.(code, t); }); });
+  return child.pid;
+}
+
+/** Is this worker process still running? (Signal 0 checks without touching it.) */
+function alive(pid: number | undefined) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const ID = /^[a-z0-9][a-z0-9-]{1,40}$/;
 
@@ -140,19 +174,13 @@ export async function startPrepare(id: string, goal: string, baseModel: string, 
     ? ["dataset", ...common, "--file", path.join(uploads, safeFileName(datasets[0].name))]
     : ["prepare", uploads, ...common, "--max-chunks", FIRST_PASS_CHUNKS];
 
-  const log = createWriteStream(path.join(dir, "prepare.log"));
-  // Args array, no shell: user text can't be interpreted as a command.
-  const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", ...args],
-    { env: { ...process.env, ...WORKER_ENV } });
-  child.stdout.pipe(log);
-  child.stderr.pipe(log);
   const finish = (code: number | null) => {
     state.status = code === 0 ? "done" : "failed";
     state.exitCode = code;
     writeFile(path.join(dir, "web.json"), JSON.stringify(state)).catch(() => {});
   };
-  child.on("error", (e) => { log.write(`\nCould not start the worker: ${e.message}\n`); finish(-1); });
-  child.on("close", finish);
+  state.pid = launch(args, path.join(dir, "prepare.log"), { onExit: finish });
+  await writeFile(path.join(dir, "web.json"), JSON.stringify(state));
 }
 
 /** A trainer account with no credit. The trainers' SDKs retry on that indefinitely, so spot it in the
@@ -215,31 +243,22 @@ export async function deleteDraft(id: string): Promise<boolean> {
 /** Starts the paid training run in the background; progress is read back by getStatus. */
 export async function startTraining(id: string): Promise<void> {
   const dir = runDir(id);
-  const launch = path.join(dir, "launch.json");
-  await rm(launch, { force: true });
-  const log = createWriteStream(path.join(dir, "train.log"), { flags: "a" });
-  const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", "train", "--run", id, "--yes"],
-    { env: { ...process.env, ...WORKER_ENV } });
-  let out = "";
+  const launchFile = path.join(dir, "launch.json");
+  await rm(launchFile, { force: true });
   let stopped: string | null = null;
   // If the worker stops before the trainer takes the job (a missing key, say), say why instead of waiting forever
-  const failed = (error: string) => writeFile(launch, JSON.stringify({ error })).catch(() => {});
-  const watch = (d: Buffer) => {
-    out = (out + d).slice(-8000);
-    const broke = !stopped && outOfCredit(out);
-    if (!broke) return;
-    stopped = broke;
-    log.write(`\n${broke}\n`);
-    child.kill();
-    failed(broke);
-    markFailed(dir, broke);
-  };
-  child.stdout.on("data", watch);
-  child.stderr.on("data", watch);
-  child.stdout.pipe(log);
-  child.stderr.pipe(log);
-  child.on("error", (e) => { log.write(`\nCould not start the trainer: ${e.message}\n`); failed(`Could not start the trainer: ${e.message}`); });
-  child.on("close", (code) => { if (code !== 0 && !stopped) failed(lastError(stripAnsi(out).split("\n"))); });
+  const failed = (error: string) => writeFile(launchFile, JSON.stringify({ error })).catch(() => {});
+  launch(["train", "--run", id, "--yes"], path.join(dir, "train.log"), {
+    onText: (text, stop) => {
+      const broke = !stopped && outOfCredit(text.slice(-8000));
+      if (!broke) return;
+      stopped = broke;
+      stop();
+      failed(broke);
+      markFailed(dir, broke);
+    },
+    onExit: (code, text) => { if (code !== 0 && !stopped) failed(lastError(text.split("\n"))); },
+  });
 }
 
 /** A run the worker had marked as training, but that we stopped: record why, so it doesn't show "Training" forever. */
@@ -278,7 +297,9 @@ async function trainProgress(dir: string, run: Record<string, unknown> | null): 
     : launch ? "failed"
     : "waiting";
   const hfRepo = typeof run?.hf_repo === "string" ? run.hf_repo : null;
-  const fetch = await readOr<{ status: "running" | "done" | "failed" } | null>(path.join(dir, "fetch.json"), JSON.parse, null);
+  const fetch = await readOr<{ status: "running" | "done" | "failed"; pid?: number } | null>(path.join(dir, "fetch.json"), JSON.parse, null);
+  // Publishing that died (the server stopped, or it crashed) without saying so: done if the repo exists, else failed
+  if (fetch?.status === "running" && fetch.pid && !alive(fetch.pid)) fetch.status = hfRepo ? "done" : "failed";
   return {
     state,
     steps,
@@ -304,16 +325,12 @@ export async function chat(id: string, message: string): Promise<{ original: str
 /** Download the trained model and publish it to a private repo on the user's Hugging Face account. */
 export async function startFetch(id: string): Promise<void> {
   const dir = runDir(id);
-  await writeFile(path.join(dir, "fetch.json"), JSON.stringify({ status: "running" }));
-  const log = createWriteStream(path.join(dir, "fetch.log"));
-  const child = spawn("uv", ["run", "--no-sync", "--directory", WORKER, "trainloop", "fetch", "--run", id, "--hf-repo", "auto"],
-    { env: { ...process.env, ...WORKER_ENV } });
-  child.stdout.pipe(log);
-  child.stderr.pipe(log);
-  const done = (code: number | null) =>
-    writeFile(path.join(dir, "fetch.json"), JSON.stringify({ status: code === 0 ? "done" : "failed" })).catch(() => {});
-  child.on("error", () => done(-1));
-  child.on("close", done);
+  const record = (status: "running" | "done" | "failed", pid?: number) =>
+    writeFile(path.join(dir, "fetch.json"), JSON.stringify({ status, pid })).catch(() => {});
+  const pid = launch(["fetch", "--run", id, "--hf-repo", "auto"], path.join(dir, "fetch.log"), {
+    onExit: (code) => record(code === 0 ? "done" : "failed"),
+  });
+  await record("running", pid);
 }
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -339,6 +356,8 @@ export async function getStatus(id: string): Promise<RunStatus | null> {
   const web = await readOr<WebState | null>(path.join(dir, "web.json"), JSON.parse, null)
     ?? (run ? { status: "done" as const, exitCode: 0, startedAt: "" } : null);
   if (!web) return null;
+  // A data step that stopped without reporting back (the server restarted mid-way, or it crashed)
+  if (web.status === "running" && web.pid && !alive(web.pid)) web.status = run ? "done" : "failed";
 
   const lines = stripAnsi(await readOr(path.join(dir, "prepare.log"), (s) => s, "")).split("\n");
   const uploads = await readdir(path.join(dir, "uploads")).catch(() => [] as string[]);
@@ -401,6 +420,7 @@ export async function listRuns(): Promise<RunSummary[]> {
     const run = await readOr<Record<string, unknown> | null>(path.join(dir, "run.json"), JSON.parse, null);
     const web = await readOr<WebState | null>(path.join(dir, "web.json"), JSON.parse, null);
     if (!run && !web) return null;
+    if (web?.status === "running" && web.pid && !alive(web.pid)) web.status = run ? "done" : "failed";
     const updated = await stat(path.join(dir, run ? "run.json" : "web.json")).then((s) => s.mtimeMs, () => 0);
     const job = typeof run?.job_state === "string" ? run.job_state : null;
     const state: RunSummary["state"] =
