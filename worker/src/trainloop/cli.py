@@ -741,6 +741,21 @@ def score(
 
 
 @app.command()
+def evidence(run: RunOpt, as_json: Annotated[bool, typer.Option("--json", help="Machine-readable")] = False):
+    """The evidence pack: what the model is, where the data went, how it scored, how to run it without us. Free."""
+    from . import evidence as ev
+
+    run_dir = _run_dir(run)
+    pack = ev.build(run_dir, _load(run_dir))
+    (run_dir / "evidence.json").write_text(json.dumps(pack, indent=2))
+    (run_dir / "evidence.html").write_text(ev.render_html(pack), encoding="utf-8")
+    if as_json:
+        typer.echo(json.dumps(pack))
+    else:
+        typer.secho(f"Wrote {run_dir / 'evidence.html'}", fg="green")
+
+
+@app.command()
 def chat(
     run: RunOpt,
     message: Annotated[str, typer.Option(help="What to ask")],
