@@ -352,6 +352,13 @@ export function modelArchive(id: string): ReadableStream<Uint8Array> {
 }
 
 /** Ask the original and the trained model the same question (Tinker runs). */
+/** The evidence pack for a run (worker/src/trainloop/evidence.py): rebuilt from the run folder each time. Free. */
+export async function evidencePage(id: string): Promise<string> {
+  const dir = runDir(id);
+  await worker(["evidence", "--run", id]);
+  return readFile(path.join(dir, "evidence.html"), "utf8");
+}
+
 export async function chat(id: string, message: string): Promise<{ original: string; trained: string }> {
   runDir(id);
   return JSON.parse(await worker(["chat", "--run", id, "--message", message, "--json"], 300_000));

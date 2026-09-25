@@ -86,6 +86,9 @@ export default function Scorecard({ run, bump }: { run: RunStatus; bump: () => v
                   <p className="text-[15px] text-muted">{verdict.text}</p>
                 </div>
               )}
+              <a href={`/api/runs/${run.id}/evidence`} target="_blank" rel="noopener" className={btn.ghost}>
+                Open the report and evidence pack
+              </a>
               <p className="text-xs text-faint">
                 {card!.metric === "exact" ? "Marked by exact match." : "Marked by a judge model (GLM 5.3, zero data retention) against the reference answers."}
                 {card!.notes.map((n) => ` ${n}`)}
