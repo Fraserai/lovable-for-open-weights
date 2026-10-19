@@ -89,7 +89,7 @@ def prepare(
     per_chunk: Annotated[int, typer.Option(help="Examples to write per document chunk")] = 4,
     max_chunks: Annotated[Optional[int], typer.Option(help="Cap chunks (useful for a cheap first pass)")] = None,
     preview: Annotated[bool, typer.Option(help="Parse and chunk only; don't call the generator")] = False,
-    base_model: Annotated[str, typer.Option(help="Fireworks base model")] = config.DEFAULT_BASE_MODEL,
+    base_model: Annotated[str, typer.Option(help="Base model (Hugging Face id trains on Tinker)")] = config.DEFAULT_BASE_MODEL,
     hold_out: Annotated[bool, typer.Option(help="Keep ~10% back as a test set for `trainloop score`")] = True,
 ):
     """Parse documents and write validated training JSONL for the goal."""

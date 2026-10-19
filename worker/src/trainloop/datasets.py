@@ -26,6 +26,10 @@ _PAIRS = [
     ("instruction", "output"), ("instruction", "response"), ("prompt", "response"),
     ("prompt", "completion"), ("question", "answer"), ("issue", "decision"),
     ("input", "output"), ("query", "answer"),
+    # Classification datasets: a text column and its label
+    ("text", "label"), ("text", "intent"), ("text", "category"), ("text", "class"),
+    ("message", "label"), ("message", "intent"), ("message", "category"),
+    ("sentence", "label"), ("input", "label"), ("content", "label"),
 ]
 _ROLE_ALIASES = {"human": "user", "gpt": "assistant", "bot": "assistant", "assistant": "assistant",
                  "user": "user", "system": "system"}

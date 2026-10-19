@@ -6,13 +6,14 @@ from dotenv import load_dotenv
 # .env lives at the repo root, one level above worker/
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-DEFAULT_BASE_MODEL = "accounts/fireworks/models/glm-5p3-flash"
+DEFAULT_BASE_MODEL = "Qwen/Qwen3.5-4B"  # Tinker; proven end to end (Banking77)
+FIREWORKS_GLM_FLASH = "accounts/fireworks/models/glm-5p3-flash"
 DEFAULT_GENERATOR_MODEL = "z-ai/glm-5.3"
 
 # Max training context for GLM-5.3-Flash managed SFT (Fireworks training catalog, Sept 2026)
-BASE_MODEL_TRAIN_CTX = {DEFAULT_BASE_MODEL: 65536}
+BASE_MODEL_TRAIN_CTX = {FIREWORKS_GLM_FLASH: 65536}
 # Matching public checkpoint, used in the model card
-BASE_MODEL_HF_ID = {DEFAULT_BASE_MODEL: "zai-org/GLM-5.3-Flash"}
+BASE_MODEL_HF_ID = {FIREWORKS_GLM_FLASH: "zai-org/GLM-5.3-Flash"}
 
 RUNS_DIR = Path(__file__).resolve().parents[3] / "runs"
 

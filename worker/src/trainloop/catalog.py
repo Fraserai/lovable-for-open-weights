@@ -91,6 +91,8 @@ def _fireworks_entries(transport: httpx.BaseTransport | None) -> list[dict]:
             "sft_lora": bool(m.get("managedSftLora")),
             "dpo": dpo if isinstance(dpo, bool) else None,
             "train_price": None,
+            "prefill_price": None,
+            "sample_price": None,
         })
     return entries
 
@@ -106,6 +108,8 @@ def _tinker_entries(transport: httpx.BaseTransport | None) -> list[dict]:
         "sft_lora": True,
         "dpo": None,  # per-model DPO support is not published in models.json
         "train_price": m.get("train"),
+        "prefill_price": m.get("prefill"),
+        "sample_price": m.get("sample"),
     } for m in json.loads(_get(TINKER_MODELS_URL, transport))]
 
 
