@@ -126,6 +126,9 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Endpoint use: the retention signal (is the customer still using the model they trained?)
+    endpoint_calls: Mapped[int] = mapped_column(Integer, default=0)
+    endpoint_last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class CreditEntry(Base):

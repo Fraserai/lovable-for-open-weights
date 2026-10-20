@@ -60,6 +60,11 @@ needs its own volume, and a job resumes fastest on the worker that started it.
 | `ENTERPRISE_CONTACT` | Optional, e.g. `mailto:you@yourdomain.com` |
 | `CREDIT_VALUE_USD` | Optional. Default `0.041` (1 credit ≈ 4.1c of Tinker cost). Raise it if Tinker raises prices. |
 
+**If a service won't start**, its log says exactly which setting is missing. On a public `https://` URL
+Weightroom refuses to run without `SECRET_KEY`, `ENCRYPTION_KEY`, `TRAINER=tinker`, `STORAGE=s3` and a
+Postgres `DATABASE_URL`: any of those wrong would leak links, lose files, or charge customers for fake runs.
+If agents connect through a second domain, add it to `EXTRA_HOSTS` (comma-separated).
+
 **If the image build fails at the torch step**, the PyTorch CPU index may be unreachable from the builder.
 Delete the `&& uv pip install ... torch ...` line and both `--no-install-package torch` flags in the
 `Dockerfile`. The image gets much bigger, but it works.
@@ -83,6 +88,9 @@ Delete the `&& uv pip install ... torch ...` line and both `--no-install-package
 ## Notes
 
 - The free tier refills to 10 credits every 30 days; paid plans add credits on each Stripe invoice.
+- New accounts are limited to three per network per day, so free credits can't be farmed.
+- `python -m weightroom.admin retention` answers the churn question: of models trained 30+ days ago, how
+  many are still called through their endpoint, and how many of their accounts still pay.
 - The quote is the price. A job's credits are reserved at start and refunded in full if it fails.
   Tinker's billing usage is tagged per job (`weightroom:<job id>`) if you want to compare our quotes
   with real cost.

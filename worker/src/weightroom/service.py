@@ -99,6 +99,9 @@ def chat_completion(authorization: str | None, body: dict) -> dict:
     usd = (prompt_tokens * (price.get("prefill") or price.get("train") or FALLBACK_PREFILL_USD)
            + completion_tokens * (price.get("sample") or price.get("train") or FALLBACK_SAMPLE_USD)) / 1e6
     with db.session() as s:
+        used = s.get(db.Job, job.id)
+        used.endpoint_calls = (used.endpoint_calls or 0) + 1
+        used.endpoint_last_used_at = db.now()
         account = s.get(db.Account, account_id)
         account.inference_carry_usd = (account.inference_carry_usd or 0.0) + usd
         whole = math.floor(account.inference_carry_usd / config.get().credit_value_usd)
