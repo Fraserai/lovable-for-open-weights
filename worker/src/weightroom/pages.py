@@ -116,7 +116,7 @@ Any MCP client works; there's a REST API too. Agents: read <a href="/llms.txt">/
 <li>{p['business']['monthly_credits']} credits a month</li><li>Spend caps per agent key</li><li>Team keys</li></ul></div>
 <div class="card"><h3>Enterprise</h3><div class="price">Custom</div><ul class="ticks"><li>Runs in your own cloud</li>
 <li>Volume pricing and support</li><li><a href="{html.escape(config.get().enterprise_contact)}">Contact us</a></li></ul></div>
-</div><p class="muted small">1 credit ≈ $0.04 of training compute. A 4B model on ~1,000 examples is about 10 credits;
+</div><p class="muted small">Credits buy training and endpoint use. A 4B model on ~1,000 examples is about 10 credits;
 a 1T-parameter model about 100.</p></section>
 </main>"""
     return layout("Weightroom: train a model on your data, own the weights", body)
@@ -175,7 +175,7 @@ a.innerHTML=`<div class="row" style="align-items:center;justify-content:space-be
 <p>${esc(me.plan_name)} plan</p></div><div class="card"><h3>Plan</h3><div class="row" style="margin-top:8px">
 ${me.plan==='free'?'<button class="btn" data-buy="pro">Upgrade to Pro</button><button class="btn ghost" data-buy="business">Business</button>':
 '<button class="btn ghost" id="portal">Manage billing</button>'}
-${me.can_top_up?'<button class="btn" data-buy="topup">Top up 100 credits</button>':''}</div></div></div>
+${me.can_top_up?'<button class="btn" data-buy="topup">Top up ${me.top_up.credits} credits ($${me.top_up.usd})</button>':''}</div></div></div>
 <section><h2>API keys</h2><p class="muted small">Give each agent its own key. Caps are in credits; blank means no cap.</p>
 <div class="table-wrap"><table><tr><th>Name</th><th>Key</th><th>Spent (30 days)</th><th>Monthly cap</th><th>Per-job cap</th><th></th></tr>
 ${me.keys.map(k=>`<tr data-id="${k.id}"><td>${esc(k.name)}</td><td><code>${esc(k.prefix)}</code></td><td>${k.spent_last_30_days}</td>

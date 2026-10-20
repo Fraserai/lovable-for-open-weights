@@ -72,8 +72,8 @@ Metered in credits at Tinker's sampling rates.
 
 ## Credits and plans
 
-1 credit is roughly $0.04 of training compute: a 4B model on ~1,000 examples is about 10 credits; a 1T-parameter
-model about 100. Plans: Free (10 credits/month), Pro (${p['pro']['usd_per_month']}/month, {p['pro']['monthly_credits']} credits),
+Credits buy training and endpoint use: a 4B model on ~1,000 examples is about 10 credits; a 1T-parameter model
+about 100. `quote` gives the exact number for your data before anything is spent. Plans: Free (10 credits/month), Pro (${p['pro']['usd_per_month']}/month, {p['pro']['monthly_credits']} credits),
 Business (${p['business']['usd_per_month']}/month, {p['business']['monthly_credits']} credits, per-key spend caps),
 Enterprise (custom). Top-ups: {credits.TOPUP_CREDITS} credits for ${credits.TOPUP_USD}. Each API key can have a monthly and a
 per-job spend cap; `train` refuses anything over them.

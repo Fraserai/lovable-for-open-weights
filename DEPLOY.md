@@ -19,7 +19,7 @@ run, and every run shows a quote first.
 1. Products → create three prices:
    - **Weightroom Pro**: $49, recurring monthly → copy its price id (`price_...`) into `STRIPE_PRICE_PRO`
    - **Weightroom Business**: $149, recurring monthly → `STRIPE_PRICE_BUSINESS`
-   - **100 credits**: $20, one-off → `STRIPE_PRICE_TOPUP`
+   - **40 credits**: $20, one-off → `STRIPE_PRICE_TOPUP`
 2. Developers → Webhooks → add an endpoint at `https://<your domain>/stripe/webhook` with these events:
    `checkout.session.completed`, `invoice.paid`, `customer.subscription.updated`,
    `customer.subscription.deleted`. Copy its signing secret into `STRIPE_WEBHOOK_SECRET`.

@@ -87,7 +87,7 @@ def test_topup_once_and_only_on_paid_plans(stripe_on):
         "payment_status": "paid"}}}
     _send(client, topup)
     _send(client, topup)
-    assert client.get("/account/me").json()["balance_credits"] == 110
+    assert client.get("/account/me").json()["balance_credits"] == 10 + 40
 
 
 def test_cancelled_subscription_goes_back_to_free(stripe_on):

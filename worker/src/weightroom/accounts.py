@@ -65,6 +65,7 @@ def overview(s: Session, account: db.Account) -> dict:
         "plan_name": plan["name"],
         "balance_credits": credits.balance(s, account.id),
         "can_top_up": plan["top_ups"],
+        "top_up": {"credits": credits.TOPUP_CREDITS, "usd": credits.TOPUP_USD},
         "has_hf_token": bool(account.hf_token_enc),
         "keys": [{"id": k.id, "name": k.name, "prefix": k.prefix + "…", "monthly_cap_credits": k.monthly_cap_credits,
                   "per_job_cap_credits": k.per_job_cap_credits, "spent_last_30_days": credits.spent_this_month(s, k.id),

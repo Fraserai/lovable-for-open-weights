@@ -21,7 +21,9 @@ PLANS = {
     "business": {"name": "Business", "usd_per_month": 149, "monthly_credits": 300, "top_ups": True},
     "enterprise": {"name": "Enterprise", "usd_per_month": None, "monthly_credits": None, "top_ups": True},
 }
-TOPUP_CREDITS = 100
+# Top-ups cost a little more per credit than any plan (50c vs Pro 49c, Business ~50c), so the plan is
+# always the better deal and top-ups are for running out mid-month, never a way around the plan.
+TOPUP_CREDITS = 40
 TOPUP_USD = 20
 
 
