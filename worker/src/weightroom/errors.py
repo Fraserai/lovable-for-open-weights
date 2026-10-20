@@ -28,4 +28,4 @@ class WRError(Exception):
 
 def not_found(what: str, ident: str) -> WRError:
     return WRError(f"{what}_not_found", f"No {what.replace('_', ' ')} {ident!r} on this account.",
-                   f"Check the id. list_jobs shows this API key's jobs.", status=404)
+                   f"Check the id. list_jobs shows this account's jobs.", status=404)
