@@ -64,7 +64,7 @@ def test_subscription_then_monthly_credits_once(stripe_on):
         "metadata": {"account_id": acct.id, "item": "pro"}, "payment_status": "paid"}}}
     assert _send(client, done).json()["result"] == "plan pro"
     invoice = {"type": "invoice.paid", "data": {"object": {
-        "id": "in_1", "customer": "cus_1", "lines": {"data": [{"pricing": {"price_details": {"price": "price_pro"}}}]}}}}
+        "id": "in_1", "customer": "cus_1", "billing_reason": "subscription_create", "lines": {"data": [{"pricing": {"price_details": {"price": "price_pro"}}}]}}}}
     assert _send(client, invoice).status_code == 200
     assert _send(client, invoice).status_code == 200  # Stripe retries; no double grant
     me = client.get("/account/me").json()
@@ -132,3 +132,58 @@ def test_login_and_cookie_guard(client):
     # a cross-site form post can't create keys with the login cookie
     r = client.post("/account/keys", data={"name": "evil"})
     assert r.status_code in (415, 422)
+
+
+def test_one_off_invoices_never_grant_plan_credits(stripe_on):
+    client = stripe_on
+    _signup(client)
+    from weightroom import db
+
+    with db.session() as s:
+        s.scalar(select(db.Account)).plan = "pro"
+    r = _send(client, {"type": "invoice.paid", "data": {"object": {
+        "id": "in_topup", "customer": "cus_1", "billing_reason": "manual", "lines": {"data": []}}}})
+    assert r.json()["result"].startswith("ignored")
+    assert client.get("/account/me").json()["balance_credits"] == 10
+
+
+def test_no_second_subscription(stripe_on):
+    client = stripe_on
+    _signup(client)
+    from weightroom import db
+
+    with db.session() as s:
+        s.scalar(select(db.Account)).plan = "pro"
+    r = client.post("/account/checkout", json={"item": "business"})
+    assert r.status_code == 409 and "Manage billing" in r.json()["error"]["fix"]
+
+
+def test_signups_per_network_are_limited(client):
+    for i in range(3):
+        assert client.post("/account/signup", json={"email": f"s{i}@example.com",
+                                                    "password": "correct horse battery"}).status_code == 200
+    r = client.post("/account/signup", json={"email": "s9@example.com", "password": "correct horse battery"})
+    assert r.status_code == 429 and r.json()["error"]["code"] == "too_many_signups"
+
+
+def test_production_refuses_unsafe_settings(monkeypatch):
+    from weightroom import config
+
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://weightroom.example")
+    for name in ("SECRET_KEY", "ENCRYPTION_KEY", "TRAINER", "STORAGE", "DATABASE_URL", "ALLOW_FAKE_TRAINER"):
+        monkeypatch.delenv(name, raising=False)
+    config.reload()
+    problems = " ".join(config.production_problems(config.get()))
+    for word in ("SECRET_KEY", "ENCRYPTION_KEY", "fake training", "STORAGE", "Postgres"):
+        assert word in problems
+    with pytest.raises(RuntimeError):
+        config.require_safe_production()
+
+    monkeypatch.setenv("SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("ENCRYPTION_KEY", "k")
+    monkeypatch.setenv("TRAINER", "tinker")
+    monkeypatch.setenv("STORAGE", "s3")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db/wr")
+    config.reload()
+    assert config.production_problems(config.get()) == []
+    config.reload()

@@ -45,6 +45,7 @@ class Account(Base):
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     hf_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     free_grant_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    signup_ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     inference_carry_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

@@ -78,7 +78,8 @@ def save_upload(s: Session, dataset_id: str, token: str, tmp: Path, size: int) -
         raise WRError("empty_upload", "The upload was empty.", "Check the file path in the curl command and run it again.")
     store().put(_raw_key(ds), tmp)
     ds.size_bytes = size
-    ds.state = "uploaded"
+    ds.state = "uploaded"  # re-uploading means checking (and quoting) again
+    ds.report = {**(ds.report or {}), "checked_at": db.now().isoformat()}
     return {"dataset_id": ds.id, "bytes": size,
             "next": f"Call check_data with dataset_id='{ds.id}'."}
 
@@ -263,7 +264,8 @@ def check(s: Session, account: db.Account, key: db.ApiKey, *, dataset_id: str | 
         ds.state = "checked" if ok else "uploaded"
         ds.train_rows, ds.test_rows, ds.est_tokens = kept, held, report.est_tokens
         ds.instructions = instructions
-        ds.report = {**(ds.report or {}), "task": task, "columns": columns[:50], "ok": ok}
+        ds.report = {**(ds.report or {}), "task": task, "columns": columns[:50], "ok": ok,
+                     "checked_at": db.now().isoformat()}
 
     result = {
         "dataset_id": ds.id,

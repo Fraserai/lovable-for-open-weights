@@ -4,6 +4,7 @@ Agents never use these; they use an API key. The dashboard page calls these thro
 """
 
 import re
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,9 +14,10 @@ from .errors import WRError
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SESSION_TTL = 14 * 24 * 3600
+SIGNUPS_PER_IP_PER_DAY = 3  # free credits are real compute; stop scripted farming
 
 
-def signup(s: Session, email: str, password: str) -> tuple[db.Account, str]:
+def signup(s: Session, email: str, password: str, ip: str | None = None) -> tuple[db.Account, str]:
     email = (email or "").strip().lower()
     if not _EMAIL.match(email):
         raise WRError("bad_email", "That doesn't look like an email address.", "Check it and try again.")
@@ -23,7 +25,14 @@ def signup(s: Session, email: str, password: str) -> tuple[db.Account, str]:
         raise WRError("weak_password", "Passwords need at least 10 characters.", "Choose a longer password.")
     if s.scalar(select(db.Account.id).where(db.Account.email == email)):
         raise WRError("email_taken", "There's already an account with that email.", "Log in instead.", status=409)
-    account = db.Account(email=email, password_hash=security.hash_password(password), free_grant_at=db.now())
+    if ip:
+        recent = s.scalars(select(db.Account.id).where(db.Account.signup_ip == ip,
+                                                       db.Account.created_at >= db.now() - timedelta(days=1))).all()
+        if len(recent) >= SIGNUPS_PER_IP_PER_DAY:
+            raise WRError("too_many_signups", "Too many new accounts from this network today.",
+                          "Log in to an existing account, or try again tomorrow.", status=429)
+    account = db.Account(email=email, password_hash=security.hash_password(password), free_grant_at=db.now(),
+                         signup_ip=ip)
     s.add(account)
     s.flush()
     from . import config

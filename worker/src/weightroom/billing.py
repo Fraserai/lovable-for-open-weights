@@ -53,6 +53,9 @@ def checkout(s: Session, account: db.Account, item: str) -> str:
         raise WRError("bad_request", "Choose pro, business or topup.", "")
     if item == "topup" and not credits.PLANS[account.plan]["top_ups"]:
         raise WRError("plan_required", "Top-ups come with Pro and Business.", "Upgrade first.")
+    if item in ("pro", "business") and account.plan != "free":
+        raise WRError("already_subscribed", f"This account is already on {credits.PLANS[account.plan]['name']}.",
+                      "Use Manage billing to change or cancel the plan.", status=409)
     stripe = _stripe()
     base = config.get().public_base_url
     params = {
@@ -124,6 +127,8 @@ def handle_webhook(s: Session, payload: bytes, signature: str | None) -> str:
         return "ignored"
 
     if kind in ("invoice.paid", "invoice.payment_succeeded"):
+        if not str(obj.get("billing_reason") or "").startswith("subscription"):
+            return "ignored: not a subscription invoice"  # e.g. an invoice for a one-off top-up
         account = _account_by_customer(s, obj.get("customer"))
         if account is None:
             return "ignored: unknown customer"

@@ -7,6 +7,7 @@ Training happens in the separate worker process (python -m weightroom.worker), n
 """
 
 import contextlib
+import os
 import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
@@ -25,10 +26,11 @@ COOKIE = "wr_session"
 
 
 def _mcp_app():
-    host = urlparse(config.get().public_base_url).netloc
+    hosts = [urlparse(config.get().public_base_url).netloc, os.environ.get("RAILWAY_PUBLIC_DOMAIN", ""),
+             *os.environ.get("EXTRA_HOSTS", "").split(",")]
     security_settings = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
-        allowed_hosts=[host, "localhost:*", "127.0.0.1:*", "testserver"],
+        allowed_hosts=[h.strip() for h in hosts if h.strip()] + ["localhost:*", "127.0.0.1:*", "testserver"],
         allowed_origins=[config.get().public_base_url, "http://localhost:*", "http://127.0.0.1:*"])
     return mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True, json_response=True,
                                    transport_security=security_settings)
@@ -39,6 +41,7 @@ def create_app() -> FastAPI:
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
+        config.require_safe_production()
         db.init()
         async with mcp.session_manager.run():
             yield
@@ -168,7 +171,8 @@ def create_app() -> FastAPI:
     def account_signup(request: Request, body: dict = Body(...)):
         _json_only(request)
         with db.session() as s:
-            account, raw = accounts.signup(s, body.get("email"), body.get("password"))
+            ip = request.client.host if request.client else None
+            account, raw = accounts.signup(s, body.get("email"), body.get("password"), ip)
             return _login_response({"api_key": raw, "note": "Copy this key now; it won't be shown again."}, account)
 
     @app.post("/account/login", include_in_schema=False)

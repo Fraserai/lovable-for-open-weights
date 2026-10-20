@@ -74,6 +74,31 @@ class Settings:
         return self.public_base_url.startswith("https://")
 
 
+def production_problems(s: "Settings") -> list[str]:
+    """Settings that would be dangerous on a public server. The API and worker refuse to start with any."""
+    if not s.is_production:
+        return []
+    problems = []
+    if s.secret_key in ("", "dev-only-not-secret"):
+        problems.append("SECRET_KEY isn't set: login cookies and upload/download links could be forged.")
+    if not s.encryption_key:
+        problems.append("ENCRYPTION_KEY isn't set: customers' Hugging Face tokens can't be stored.")
+    if s.trainer != "tinker" and _env("ALLOW_FAKE_TRAINER") != "1":
+        problems.append("TRAINER isn't 'tinker': customers would be charged for fake training runs.")
+    if s.storage != "s3" and _env("ALLOW_LOCAL_STORAGE") != "1":
+        problems.append("STORAGE isn't 's3': the web service and the worker can't share files on separate machines.")
+    if s.database_url.startswith("sqlite") and _env("ALLOW_SQLITE") != "1":
+        problems.append("DATABASE_URL isn't set: the web service and the worker need a shared Postgres database.")
+    return problems
+
+
+def require_safe_production() -> None:
+    problems = production_problems(get())
+    if problems:
+        raise RuntimeError("Weightroom won't start on a public URL with these settings:\n- " + "\n- ".join(problems)
+                           + "\nSee DEPLOY.md.")
+
+
 settings = Settings()
 
 

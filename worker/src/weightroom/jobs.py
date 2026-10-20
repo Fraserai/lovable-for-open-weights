@@ -9,7 +9,7 @@ Credits are reserved when training starts and refunded in full if the job fails.
 
 import tempfile
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -131,8 +131,15 @@ def start(s: Session, account: db.Account, key: db.ApiKey, quote_id: str) -> dic
     if db.aware(q.expires_at) < db.now():
         raise WRError("quote_expired", "This quote has expired (quotes last an hour, as prices can change).",
                       f"Call quote again with dataset_id='{q.dataset_id}' and base_model='{q.base_model}'.")
-    credits.check_spend(s, account, key, q.credits)
     ds = s.get(db.Dataset, q.dataset_id)
+    changed = (ds.report or {}).get("checked_at")
+    changed = datetime.fromisoformat(changed) if changed else None
+    if ds.state != "checked" or (changed and changed > db.aware(q.created_at)):
+        raise WRError("dataset_changed", "The dataset was uploaded or checked again after this quote.",
+                      f"Call check_data if needed, then quote again with dataset_id='{q.dataset_id}'.")
+    if db.is_postgres():  # one spend at a time per account, so two trains can't both pass the balance check
+        s.get(db.Account, account.id, with_for_update=True, populate_existing=True)
+    credits.check_spend(s, account, key, q.credits)
     job = db.Job(account_id=account.id, api_key_id=key.id, quote_id=q.id, dataset_id=q.dataset_id,
                  base_model=q.base_model, plan=q.plan, credits=q.credits, total_steps=q.plan["steps"],
                  system_prompt=ds.instructions if ds else None)

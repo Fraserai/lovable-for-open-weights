@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from sqlalchemy import and_, or_, select, update
 
-from . import db, delivery, jobs
+from . import config, db, delivery, jobs
 from .errors import WRError
 
 log = logging.getLogger("weightroom.worker")
@@ -102,6 +102,7 @@ def run_once(worker_id: str) -> bool:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    config.require_safe_production()
     db.init()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
     stopping = threading.Event()

@@ -275,3 +275,17 @@ def test_endpoint_rejects_bad_requests(client, bad):
     body = {"model": "job_x", "messages": [{"role": "user", "content": "hi"}], **bad}
     r = client.post("/v1/chat/completions", json=body, headers=auth(key))
     assert r.status_code == 400
+
+
+def test_rechecking_after_a_quote_needs_a_new_quote(client):
+    key = signup(client)
+    ds = upload(client, key, banking_csv())
+    client.post("/v1/datasets/check", json={"dataset_id": ds}, headers=auth(key))
+    q = client.post("/v1/quotes", json={"dataset_id": ds}, headers=auth(key)).json()
+    client.post("/v1/datasets/check", json={"dataset_id": ds, "instructions": "Reply with the intent."},
+                headers=auth(key))
+    err = client.post("/v1/jobs", json={"quote_id": q["quote_id"]}, headers=auth(key)).json()["error"]
+    assert err["code"] == "dataset_changed" and "quote again" in err["fix"]
+    q2 = client.post("/v1/quotes", json={"dataset_id": ds}, headers=auth(key)).json()
+    assert client.post("/v1/jobs", json={"quote_id": q2["quote_id"]}, headers=auth(key)).status_code == 200
+    assert balance(client) == 10 - q2["credits"]

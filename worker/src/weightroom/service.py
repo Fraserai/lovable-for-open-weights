@@ -11,6 +11,9 @@ from . import config, credits, data, db, delivery, jobs, security
 from .errors import WRError
 from .trainers import trainer
 
+# Used only if Tinker's price list can't be loaded: its highest published rates (Kimi-K2.6), per million tokens
+FALLBACK_PREFILL_USD, FALLBACK_SAMPLE_USD = 2.205, 5.49
+
 
 def _call(authorization: str | None, fn, *args, **kwargs) -> dict:
     with db.session() as s:
@@ -90,9 +93,11 @@ def chat_completion(authorization: str | None, body: dict) -> dict:
         messages = [{"role": "system", "content": system}, *messages]
     text, prompt_tokens, completion_tokens = trainer().chat(base, renderer, sampler, messages, max_tokens, temperature)
 
-    price = credits.tinker_models_cached().get(base) or {}
-    usd = (prompt_tokens * (price.get("prefill") or price.get("train") or 0)
-           + completion_tokens * (price.get("sample") or price.get("train") or 0)) / 1e6
+    price = credits.tinker_models_cached().get(base) or credits.tinker_models().get(base) or {}
+    if not price:  # never serve for free: bill at a conservative rate until prices load
+        price = {"prefill": FALLBACK_PREFILL_USD, "sample": FALLBACK_SAMPLE_USD}
+    usd = (prompt_tokens * (price.get("prefill") or price.get("train") or FALLBACK_PREFILL_USD)
+           + completion_tokens * (price.get("sample") or price.get("train") or FALLBACK_SAMPLE_USD)) / 1e6
     with db.session() as s:
         account = s.get(db.Account, account_id)
         account.inference_carry_usd = (account.inference_carry_usd or 0.0) + usd
