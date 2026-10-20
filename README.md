@@ -6,17 +6,32 @@ From Models to Moats. See [BRAND.md](BRAND.md). Product brief: [CLAUDE.md](CLAUD
 Pick any open model, bring a dataset or your documents, and train it on a cloud trainer (Tinker,
 Fireworks, or a GPU on your Hugging Face account). You see what training costs first, and you keep the weights.
 
-## Run it
+## The hosted service (what customers and agents use)
+
+`worker/src/weightroom/` is the product: a REST API and a remote MCP server any coding agent connects to,
+plus a job worker. An agent checks the data (free), gets a quote, trains on Tinker, shows the scorecard
+(original vs trained on held-back rows) and delivers the weights, a private Hugging Face repo or a live
+endpoint. Agent guide: `/llms.txt` on the running server. Deploying: [DEPLOY.md](DEPLOY.md).
+
+Run it locally (no keys needed: SQLite, local files and a fake trainer that spends nothing):
 
 ```bash
-cp .env.example .env            # fill in the keys you have (never commit .env; it's git-ignored)
-cd worker && uv sync            # Python worker (includes Tinker's SDK, which is large)
-cd ../web && pnpm install
-pnpm dev                        # http://localhost:3000
+cd worker && uv sync --no-group documents
+PYTHONPATH=src uv run uvicorn weightroom.api:app --reload   # http://localhost:8000
+PYTHONPATH=src uv run python -m weightroom.worker          # in a second terminal
+uv run pytest                                              # includes a real MCP client one-shotting a run
 ```
 
 Keep the project out of iCloud-synced folders (Desktop, Documents). With "Optimise Mac Storage" on,
 macOS offloads `node_modules` and `.venv` files to the cloud and everything stalls while they download.
+
+## The CLI and the parked web app
+
+```bash
+cp .env.example .env            # fill in the keys you have (never commit .env; it's git-ignored)
+cd worker && uv sync            # includes Tinker's SDK and Docling, both large
+cd ../web && pnpm install && pnpm dev   # the earlier Train screen, http://localhost:3000 (parked)
+```
 
 ## How it fits together
 
@@ -52,5 +67,6 @@ Which trainer honours which setting lives in `worker/src/trainloop/settings.py` 
   `worker/scripts/banking77_score.py <run>`. The Kimi run's result is also on its Scorecard in the app.
 - **Trainers:** Tinker is proven end to end. Fireworks and Hugging Face GPU jobs are wired and their
   plans verified; neither has trained live yet. **All three accounts are currently out of credit.**
-- **Not production-ready:** no login or billing yet, and jobs run on this machine (they survive a web
-  server restart, not a reboot). Needs accounts and a hosted job runner before customers.
+- **Hosted service (2026-10-20):** accounts, API keys with spend caps, quotes, a job worker that resumes
+  after crashes, the scorecard, delivery, Stripe plans and top-ups, and the MCP server, all tested end to
+  end with a fake trainer. Not yet run against live Tinker or Stripe: that's the first step in DEPLOY.md.
