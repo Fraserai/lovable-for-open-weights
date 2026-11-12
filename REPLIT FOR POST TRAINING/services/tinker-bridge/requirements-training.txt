@@ -1,0 +1,8 @@
+# Only needed to actually run a real training job (tinker_runner.py imports
+# these lazily). Pulls in torch/transformers/datasets — multi-GB, so it's
+# kept out of the base install. Install this once you have real credentials
+# and are ready to run a live job:
+#
+#   pip install -r requirements.txt -r requirements-training.txt
+#
+tinker-cookbook>=0.5.0
