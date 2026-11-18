@@ -10,3 +10,6 @@ __pycache__/
 /runs/
 .pytest_cache/
 .DS_Store
+.venv-svc/
+wr-data/
+weightroom.db*

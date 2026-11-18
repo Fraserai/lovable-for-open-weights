@@ -186,8 +186,20 @@ def plan(train_jsonl: Path, work_dir: Path, base_model: str, s: dict | None = No
     }
 
 
-def train(work_dir: Path, base_model: str, p: dict, on_progress: Progress = print) -> str:
-    """Runs the paid training loop and returns the checkpoint's sampler path."""
+# Periodic checkpoints exist so a crashed run can resume; they cost $0.10/GB-month while they exist.
+# A day is plenty to resume from. The final checkpoint is kept (the cookbook stores it without expiry).
+PERIODIC_CHECKPOINT_TTL_SECONDS = 24 * 3600
+
+
+def train(work_dir: Path, base_model: str, p: dict, on_progress: Progress = print, *,
+          recipe_name: str = "trainloop_sft", on_step: Callable[[int], None] | None = None) -> str:
+    """Runs the paid training loop and returns the checkpoint's sampler path.
+
+    Re-running with the same `work_dir` resumes from the last saved checkpoint (the cookbook reads
+    `work_dir/logs`), so a worker that dies mid-run can pick the job up again without starting over.
+    `recipe_name` is attached to the Tinker session's user_metadata, which Tinker's billing usage
+    reports per session: the hosted service passes its job id here to match cost to jobs.
+    """
     import tinker
     from tinker_cookbook import checkpoint_utils, renderers
     from tinker_cookbook.supervised import train as sft
@@ -213,7 +225,7 @@ def train(work_dir: Path, base_model: str, p: dict, on_progress: Progress = prin
     config = sft.Config(
         log_path=str(log_dir),
         model_name=base_model,
-        recipe_name="trainloop_sft",  # tags our runs in the Tinker console usage view
+        recipe_name=recipe_name,  # tags the session in Tinker's console and billing usage
         renderer_name=p["renderer"],
         dataset_builder=builder,
         learning_rate=p["learning_rate"],
@@ -222,6 +234,7 @@ def train(work_dir: Path, base_model: str, p: dict, on_progress: Progress = prin
         max_steps=p.get("max_steps"),
         lora_rank=p["lora_rank"],
         save_every=CHECKPOINT_EVERY_N_STEPS,
+        ttl_seconds=PERIODIC_CHECKPOINT_TTL_SECONDS,
         eval_every=0,
     )
 
@@ -236,6 +249,8 @@ def train(work_dir: Path, base_model: str, p: dict, on_progress: Progress = prin
                 steps = last
             if steps != last:
                 on_progress(f"step {steps} of ~{p['steps']}")
+                if on_step:
+                    on_step(steps)
                 last = steps
             await asyncio.wait([task], timeout=3)
         await task  # surface the real exception, if any

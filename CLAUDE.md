@@ -8,42 +8,35 @@ We focus on building the best tool in this space, opening it up to users, builde
 Brand lines (see [BRAND.md](BRAND.md), use as written): **From Models to Moats. · Build Intelligence. Own It. ·
 Train Models. Build Moats. · Your Models. Your Intelligence.**
 
-## What we're building
-A Lovable-style, chat-first platform for customising open model weights.
-A team picks any open model, brings the content they want the model trained on
-plus a plain-English goal, and gets their own trained model back.
-Natural language is the programming language.
+## What we're building (direction set 20 Oct 2026; see docs/BUILD_BRIEF.md)
+**Weightroom is a tool any coding agent can call to train an open model and hand back weights the
+business owns.** The customer brings the data. The agent (Claude Code, or any other) drives the tool.
+It's cheap, it can later run inside an enterprise's own cloud, and nobody needs an ML team.
 
-Inputs: chat, voice, file upload, datasets, database connections.
+The agent is the user: few choices, compact JSON answers, jobs that run on their own, a quote before
+any spend, retries that never double-charge, and proof at the end (base vs trained on held-back data).
 
 ## Scope (do not expand without the founder's say-so)
-**Customer brings:** the content to train on + what they want the model to do.
-They own what goes in, its quality, and their rights to use it.
+**Customer brings:** training-ready data (JSONL, CSV or a Hugging Face dataset) and what the model
+should do. They own what goes in, its quality, and their rights to use it. We check data; we do not
+write or clean it for them.
 
 **We do the rest:**
-1. Ingest their uploads (files, datasets, DB connections)
-2. Convert content into the right training format for the chosen trainer
-3. Pick sensible training settings
-4. Run the job on the right trainer
-5. Hand back the model: download, private Hugging Face repo, or deployed endpoint
+1. Take the upload and check it (free): layout, columns, rows, balance, errors with the exact fix
+2. Quote the exact cost before anything is spent
+3. Pick sensible training settings and train on Tinker (LoRA)
+4. Score the trained model against the original on held-back rows (the Scorecard)
+5. Hand back the model: download, private Hugging Face repo, or a live endpoint
 
-**Model choice:** user selects freely. The platform shows which trainer can run
-each model and routes the job to it.
+The hosted service lives in `worker/src/weightroom/` (REST API + remote MCP server + job worker),
+built on the `trainloop` modules. Billing: subscription plus credits (Free / Pro / Business / Enterprise).
 
-**Non-goals:** not an eval product, not a data-prep consultancy, not a
-do-everything workbench. Stay lean and focused. Do one loop and make it feel magical.
+**Parked (keep the code, don't wire it in):** the Train web screens in `web/`, Fireworks, Unsloth,
+Together, `trainloop prepare` (documents to training data), voice, database connectors.
 
-Small in-scope items: format validation on upload (catch malformed rows before a
-paid run) and showing the training metrics the trainers already return.
-
-## Reference example (first target customer)
-Australian superannuation fund. Team selects GLM-5.3-Flash, uploads their
-industry and business content, describes the goal, trains, gets their model back.
-
-## First milestone: one end-to-end loop
-Upload PDFs -> pick GLM-5.3-Flash -> describe goal -> convert to training JSONL
--> fine-tune on Fireworks -> return weights / endpoint.
-Once this feels magical, widen: more models, more trainers, more data types.
+## Proof so far
+Banking77 (77 intents, 200 held-out messages): Qwen3.5-4B 67.5% to 82.5% for ~41c on Tinker;
+Kimi-K2.6 76.0% to 92.0% for ~$4.12.
 
 ## Core APIs
 | Role | Service | Notes (verified Sept 2026) |

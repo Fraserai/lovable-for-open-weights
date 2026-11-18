@@ -26,6 +26,10 @@ _PAIRS = [
     ("instruction", "output"), ("instruction", "response"), ("prompt", "response"),
     ("prompt", "completion"), ("question", "answer"), ("issue", "decision"),
     ("input", "output"), ("query", "answer"),
+    # Classification datasets: a text column and its label
+    ("text", "label"), ("text", "intent"), ("text", "category"), ("text", "class"),
+    ("message", "label"), ("message", "intent"), ("message", "category"),
+    ("sentence", "label"), ("input", "label"), ("content", "label"),
 ]
 _ROLE_ALIASES = {"human": "user", "gpt": "assistant", "bot": "assistant", "assistant": "assistant",
                  "user": "user", "system": "system"}
@@ -83,6 +87,8 @@ def to_messages(row: dict, fields: tuple[str, str] | None = None,
 
     for user_key, assistant_key in pairs:
         user, assistant = row.get(user_key), row.get(assistant_key)
+        if isinstance(assistant, (int, float)) and not isinstance(assistant, bool):
+            assistant = str(assistant)
         if isinstance(user, str) and isinstance(assistant, str) and user.strip() and assistant.strip():
             # Alpaca-style datasets put extra material in "input" alongside "instruction".
             extra = row.get("input") if user_key == "instruction" else None
@@ -90,6 +96,30 @@ def to_messages(row: dict, fields: tuple[str, str] | None = None,
                 user = f"{user.strip()}\n\n{extra.strip()}"
             return [{"role": "user", "content": user.strip()}, {"role": "assistant", "content": assistant.strip()}]
     return None
+
+
+def label_names(features) -> dict[str, list[str]]:
+    """Columns stored as numbered classes, with the names the dataset gives them (Hugging Face ClassLabel).
+
+    Many classification datasets store "label": 3 and keep "card_arrival" in the dataset's metadata.
+    Reading those names is reading the customer's data as written, not changing it."""
+    out = {}
+    for f in features or []:
+        kind = (f or {}).get("type") or {}
+        if kind.get("_type") == "ClassLabel" and isinstance(kind.get("names"), list):
+            out[str(f["name"])] = [str(n) for n in kind["names"]]
+    return out
+
+
+def with_label_names(row: dict, names: dict[str, list[str]]) -> dict:
+    if not names:
+        return row
+    out = dict(row)
+    for col, labels in names.items():
+        value = out.get(col)
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(labels):
+            out[col] = labels[value]
+    return out
 
 
 def from_jsonl(path: Path, fields: tuple[str, str] | None = None,
@@ -149,16 +179,19 @@ def from_hub(repo: str, split: str | None = None, config: str | None = None, lim
             available[0],
         )
         sent = 0
+        names: dict[str, list[str]] = {}
         for offset in range(0, limit, PAGE):
             resp = _get(c, ROWS_URL, {"dataset": repo, "config": config, "split": split,
                                       "offset": offset, "length": min(PAGE, limit - sent)})
             if resp.is_error:
                 raise DatasetError(f"Hugging Face returned {resp.status_code} for {repo} ({config}/{split}).")
-            rows = resp.json().get("rows", [])
+            page = resp.json()
+            rows = page.get("rows", [])
             if not rows:
                 return
+            names = names or label_names(page.get("features"))
             for item in rows:
-                messages = to_messages(item.get("row", {}), fields, templates)
+                messages = to_messages(with_label_names(item.get("row", {}), names), fields, templates)
                 if messages:
                     yield messages
                     sent += 1
